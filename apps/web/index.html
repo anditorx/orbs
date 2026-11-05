@@ -1,9 +1,15 @@
 <!doctype html>
-<html lang="id">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Orbs</title>
+    <script>
+      try {
+        const lang = localStorage.getItem("orbs:lang");
+        document.documentElement.lang = lang === "id" ? "id" : "en";
+      } catch {}
+    </script>
     <script>
       // Apply the saved theme before the app renders to avoid a flash of the wrong colors.
       try {

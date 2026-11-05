@@ -1,0 +1,53 @@
+import { defineMessages } from "../define.ts";
+
+export const thread = defineMessages(
+  {
+    "thread.started": "Conversation started · {time}",
+    "thread.fallbackTitle": "Conversation",
+    "thread.deleteTitle": "Delete conversation?",
+    "thread.deleteAria": "Delete conversation",
+    "thread.deleteBody":
+      "This conversation and all its messages will be permanently deleted. This can't be undone.",
+    "thread.infoPanel": "Info panel",
+    "thread.infoPanelTitle": "Info panel ({key}I)",
+    "thread.noAgent":
+      "The agent isn't active yet — messages are saved and broadcast in real time to all tabs.",
+    "thread.placeholder": "Write what you want to get done…",
+    "thread.send": "Send",
+    "thread.tab.info": "Info",
+    "thread.tab.files": "Files",
+    "thread.tab.preview": "Preview",
+    "thread.closePanel": "Close panel",
+    "thread.info.title": "Title",
+    "thread.info.mode": "Mode",
+    "thread.info.engine": "Engine",
+    "thread.info.messages": "Messages",
+    "thread.info.created": "Created",
+    "thread.files": "Attachments and the agent's work output will appear here (Phase 1).",
+    "thread.preview": "Previews of documents, web pages, and apps built by the agent will appear here.",
+  },
+  {
+    "thread.started": "Percakapan dimulai · {time}",
+    "thread.fallbackTitle": "Percakapan",
+    "thread.deleteTitle": "Hapus percakapan?",
+    "thread.deleteAria": "Hapus percakapan",
+    "thread.deleteBody":
+      "Percakapan ini dan semua pesannya akan dihapus permanen. Tindakan ini tidak bisa dibatalkan.",
+    "thread.infoPanel": "Panel info",
+    "thread.infoPanelTitle": "Panel info ({key}I)",
+    "thread.noAgent": "Agent belum aktif — pesan disimpan dan disiarkan real-time ke semua tab.",
+    "thread.placeholder": "Tulis apa yang ingin kamu kerjakan…",
+    "thread.send": "Kirim",
+    "thread.tab.info": "Info",
+    "thread.tab.files": "File",
+    "thread.tab.preview": "Pratinjau",
+    "thread.closePanel": "Tutup panel",
+    "thread.info.title": "Judul",
+    "thread.info.mode": "Mode",
+    "thread.info.engine": "Mesin",
+    "thread.info.messages": "Pesan",
+    "thread.info.created": "Dibuat",
+    "thread.files": "File lampiran dan hasil kerja agent akan muncul di sini (Fase 1).",
+    "thread.preview": "Pratinjau dokumen, halaman web, dan aplikasi yang dibuat agent akan tampil di sini.",
+  },
+);

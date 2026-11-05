@@ -2,6 +2,7 @@ import type { Engine, EngineOption } from "@orbs/protocol";
 import { useQuery } from "@tanstack/react-query";
 import { Bot, ChevronDown, Cpu, Sparkles } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { useT } from "../i18n/index.ts";
 import { orpc } from "../lib/rpc.ts";
 import { cn } from "../lib/utils.ts";
 
@@ -10,14 +11,15 @@ function sameEngine(a: Engine, b: Engine) {
 }
 
 const icons = { auto: Sparkles, model: Cpu, agent: Bot } as const;
-const groups: Array<{ kind: Engine["kind"]; title: string }> = [
-  { kind: "auto", title: "Otomatis" },
-  { kind: "model", title: "Model tertentu" },
-  { kind: "agent", title: "Agent eksternal" },
-];
+const groups = [
+  { kind: "auto", title: "engine.group.auto" },
+  { kind: "model", title: "engine.group.model" },
+  { kind: "agent", title: "engine.group.agent" },
+] as const;
 
 /** "Mesin" picker: Auto router, a specific model, or an external agent via harness adapter. */
 export function EnginePicker({ value, onChange }: { value: Engine; onChange: (engine: Engine) => void }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -48,7 +50,7 @@ export function EnginePicker({ value, onChange }: { value: Engine; onChange: (en
         className="inline-flex h-8 items-center gap-1.5 rounded-full border border-border px-3 text-xs font-medium hover:bg-muted"
       >
         <Icon className="size-3.5 text-primary" />
-        Mesin: {current?.label ?? "Otomatis"}
+        {t("engine.current", { name: current?.label ?? t("engine.autoName") })}
         <ChevronDown className="size-3.5 text-muted-foreground" />
       </button>
       {open && (
@@ -59,7 +61,7 @@ export function EnginePicker({ value, onChange }: { value: Engine; onChange: (en
             return (
               <div key={group.kind} className="py-1">
                 <p className="px-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  {group.title}
+                  {t(group.title)}
                 </p>
                 {items.map((option: EngineOption) => (
                   <button

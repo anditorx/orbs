@@ -6,6 +6,7 @@ import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { EnginePicker } from "../components/EnginePicker.tsx";
 import { Button } from "../components/ui/button.tsx";
 import { ConfirmDialog } from "../components/ui/confirm-dialog.tsx";
+import { getLang, localeOf, useT } from "../i18n/index.ts";
 import { orpc } from "../lib/rpc.ts";
 import { setUi, type UiState, useUi } from "../lib/uiState.ts";
 import { useDeleteThread } from "../lib/useDeleteThread.ts";
@@ -13,7 +14,11 @@ import { modKey, useShortcuts } from "../lib/useShortcuts.ts";
 import { cn } from "../lib/utils.ts";
 
 function EventRow({ event }: { event: OrbsEvent }) {
-  const time = new Date(event.occurredAt).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
+  const t = useT();
+  const time = new Date(event.occurredAt).toLocaleTimeString(localeOf(getLang()), {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
   if (event.type === "message.posted") {
     return (
       <div className="flex justify-end">
@@ -25,7 +30,7 @@ function EventRow({ event }: { event: OrbsEvent }) {
     );
   }
   if (event.type === "thread.created") {
-    return <p className="text-center text-xs text-muted-foreground">Percakapan dimulai · {time}</p>;
+    return <p className="text-center text-xs text-muted-foreground">{t("thread.started", { time })}</p>;
   }
   return (
     <p className="text-center text-xs text-muted-foreground">
@@ -35,11 +40,12 @@ function EventRow({ event }: { event: OrbsEvent }) {
 }
 
 export function ThreadView() {
+  const t = useT();
   const { threadId } = useParams({ from: "/app/t/$threadId" });
   const input = { streamType: "thread", streamId: threadId, afterSeq: 0 };
   const { data: events = [] } = useQuery(orpc.events.list.queryOptions({ input }));
   const { data: threads = [] } = useQuery(orpc.threads.list.queryOptions({ input: { limit: 200 } }));
-  const thread = threads.find((t) => t.id === threadId);
+  const thread = threads.find((th) => th.id === threadId);
   const [engine, setEngine] = useState<Engine>({ kind: "auto" });
   const [text, setText] = useState("");
   const bottom = useRef<HTMLDivElement>(null);
@@ -73,22 +79,22 @@ export function ThreadView() {
 
   const messageCount = sorted.filter((e) => e.type === "message.posted").length;
   const tabs: Array<{ id: UiState["rightPanelTab"]; label: string; icon: typeof Info }> = [
-    { id: "info", label: "Info", icon: Info },
-    { id: "files", label: "File", icon: FileText },
-    { id: "preview", label: "Pratinjau", icon: MonitorPlay },
+    { id: "info", label: t("thread.tab.info"), icon: Info },
+    { id: "files", label: t("thread.tab.files"), icon: FileText },
+    { id: "preview", label: t("thread.tab.preview"), icon: MonitorPlay },
   ];
 
   return (
     <div className="flex h-full">
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-border px-6">
-          <h2 className="truncate text-sm font-semibold">{thread?.title ?? "Percakapan"}</h2>
+          <h2 className="truncate text-sm font-semibold">{thread?.title ?? t("thread.fallbackTitle")}</h2>
           <div className="flex items-center gap-1">
             <button
               type="button"
               onClick={() => setConfirmDelete(true)}
-              aria-label="Hapus percakapan"
-              title="Hapus percakapan"
+              aria-label={t("thread.deleteAria")}
+              title={t("thread.deleteAria")}
               className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-destructive"
             >
               <Trash2 className="size-4" />
@@ -96,8 +102,8 @@ export function ThreadView() {
             <button
               type="button"
               onClick={() => setUi((s) => ({ rightPanelOpen: !s.rightPanelOpen }))}
-              aria-label="Panel info"
-              title={`Panel info (${modKey}I)`}
+              aria-label={t("thread.infoPanel")}
+              title={t("thread.infoPanelTitle", { key: modKey })}
               className={cn(
                 "rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground",
                 panelOpen && "bg-muted text-foreground",
@@ -109,8 +115,8 @@ export function ThreadView() {
         </header>
         <ConfirmDialog
           open={confirmDelete}
-          title="Hapus percakapan?"
-          description="Percakapan ini dan semua pesannya akan dihapus permanen untuk semua anggota. Tindakan ini tidak bisa dibatalkan."
+          title={t("thread.deleteTitle")}
+          description={t("thread.deleteBody")}
           busy={deleteThread.isPending}
           onCancel={() => setConfirmDelete(false)}
           onConfirm={() => deleteThread.mutate({ threadId }, { onSettled: () => setConfirmDelete(false) })}
@@ -121,9 +127,7 @@ export function ThreadView() {
               <EventRow key={event.seq} event={event} />
             ))}
             {messageCount > 0 && (
-              <p className="text-center text-xs text-muted-foreground">
-                Agent belum aktif — pesan disimpan dan disiarkan real-time ke semua tab.
-              </p>
+              <p className="text-center text-xs text-muted-foreground">{t("thread.noAgent")}</p>
             )}
             <div ref={bottom} />
           </div>
@@ -137,12 +141,12 @@ export function ThreadView() {
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey) submit(e);
               }}
-              placeholder="Tulis apa yang ingin kamu kerjakan…"
+              placeholder={t("thread.placeholder")}
               className="w-full resize-none bg-transparent text-sm outline-none placeholder:text-muted-foreground"
             />
             <div className="mt-2 flex items-center justify-between">
               <EnginePicker value={engine} onChange={setEngine} />
-              <Button type="submit" disabled={!text.trim() || post.isPending} aria-label="Kirim">
+              <Button type="submit" disabled={!text.trim() || post.isPending} aria-label={t("thread.send")}>
                 <SendHorizontal className="size-4" />
               </Button>
             </div>
@@ -169,7 +173,7 @@ export function ThreadView() {
             <button
               type="button"
               onClick={() => setUi({ rightPanelOpen: false })}
-              aria-label="Tutup panel"
+              aria-label={t("thread.closePanel")}
               className="ml-auto rounded-lg p-1.5 text-muted-foreground hover:bg-muted"
             >
               <X className="size-4" />
@@ -179,43 +183,35 @@ export function ThreadView() {
             {panelTab === "info" && thread && (
               <dl className="space-y-3">
                 <div>
-                  <dt className="text-xs text-muted-foreground">Judul</dt>
+                  <dt className="text-xs text-muted-foreground">{t("thread.info.title")}</dt>
                   <dd>{thread.title}</dd>
                 </div>
                 <div>
-                  <dt className="text-xs text-muted-foreground">Mode</dt>
-                  <dd>{thread.mode === "code" ? "Kode" : "Kerja"}</dd>
+                  <dt className="text-xs text-muted-foreground">{t("thread.info.mode")}</dt>
+                  <dd>{thread.mode === "code" ? t("shell.code") : t("shell.work")}</dd>
                 </div>
                 <div>
-                  <dt className="text-xs text-muted-foreground">Mesin</dt>
+                  <dt className="text-xs text-muted-foreground">{t("thread.info.engine")}</dt>
                   <dd>
                     {thread.engine.kind === "auto"
-                      ? "Otomatis"
+                      ? t("engine.autoName")
                       : thread.engine.kind === "model"
                         ? thread.engine.modelId
                         : thread.engine.harness}
                   </dd>
                 </div>
                 <div>
-                  <dt className="text-xs text-muted-foreground">Pesan</dt>
+                  <dt className="text-xs text-muted-foreground">{t("thread.info.messages")}</dt>
                   <dd>{messageCount}</dd>
                 </div>
                 <div>
-                  <dt className="text-xs text-muted-foreground">Dibuat</dt>
-                  <dd>{new Date(thread.createdAt).toLocaleString("id-ID")}</dd>
+                  <dt className="text-xs text-muted-foreground">{t("thread.info.created")}</dt>
+                  <dd>{new Date(thread.createdAt).toLocaleString(localeOf(getLang()))}</dd>
                 </div>
               </dl>
             )}
-            {panelTab === "files" && (
-              <p className="text-muted-foreground">
-                File lampiran dan hasil kerja agent akan muncul di sini (Fase 1).
-              </p>
-            )}
-            {panelTab === "preview" && (
-              <p className="text-muted-foreground">
-                Pratinjau dokumen, halaman web, dan aplikasi yang dibuat agent akan tampil di sini.
-              </p>
-            )}
+            {panelTab === "files" && <p className="text-muted-foreground">{t("thread.files")}</p>}
+            {panelTab === "preview" && <p className="text-muted-foreground">{t("thread.preview")}</p>}
           </div>
         </aside>
       )}

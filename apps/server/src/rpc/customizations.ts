@@ -5,6 +5,7 @@ import { ORPCError } from "@orpc/server";
 import { and, asc, eq, or } from "drizzle-orm";
 import { audit } from "../audit.ts";
 import { db } from "../db.ts";
+import { t } from "../i18n.ts";
 import { inOrg } from "./base.ts";
 
 const C = schema.customization;
@@ -16,13 +17,16 @@ function validateBody(kind: string, body: string) {
   try {
     json = JSON.parse(body);
   } catch {
-    throw new ORPCError("BAD_REQUEST", { message: "Isi plugin harus berupa JSON manifest yang valid" });
+    throw new ORPCError("BAD_REQUEST", { message: t("custom.invalidJson") });
   }
   const parsed = parseManifest(json);
   if (!parsed.success) {
     const issue = parsed.error.issues[0];
     throw new ORPCError("BAD_REQUEST", {
-      message: `Manifest plugin tidak valid: ${issue?.path.join(".") || "manifest"} — ${issue?.message}`,
+      message: t("custom.invalidManifest", {
+        path: issue?.path.join(".") || "manifest",
+        detail: issue?.message ?? "",
+      }),
     });
   }
 }
@@ -34,7 +38,7 @@ async function assertProject(orgId: string, projectId: string | null) {
     .from(schema.project)
     .where(and(eq(schema.project.id, projectId), eq(schema.project.orgId, orgId)))
     .limit(1);
-  if (!row) throw new ORPCError("NOT_FOUND", { message: "Proyek tidak ditemukan" });
+  if (!row) throw new ORPCError("NOT_FOUND", { message: t("common.projectNotFound") });
 }
 
 const columns = {
@@ -78,7 +82,7 @@ async function loadOne(id: string, orgId: string, viewer: { userId: string; role
     .limit(1);
   // Other people's personal items are invisible, so report them as missing.
   if (!r || (r.row.scope === "user" && r.row.ownerId !== viewer.userId)) {
-    throw new ORPCError("NOT_FOUND", { message: "Kustomisasi tidak ditemukan" });
+    throw new ORPCError("NOT_FOUND", { message: t("custom.notFound") });
   }
   return toCustomization(r, viewer);
 }
@@ -86,10 +90,7 @@ async function loadOne(id: string, orgId: string, viewer: { userId: string; role
 function assertEditable(item: Customization) {
   if (!item.editable) {
     throw new ORPCError("FORBIDDEN", {
-      message:
-        item.scope === "org"
-          ? "Hanya owner atau admin yang bisa mengubah item milik ruang kerja"
-          : "Hanya pemilik yang bisa mengubah item ini",
+      message: item.scope === "org" ? t("custom.editOrgAdminOnly") : t("custom.editOwnerOnly"),
     });
   }
 }
@@ -116,7 +117,7 @@ export const customizationsRouter = {
   create: inOrg.customizations.create.handler(async ({ context, input }) => {
     if (input.scope === "org" && !isOrgAdmin(context.role)) {
       throw new ORPCError("FORBIDDEN", {
-        message: "Hanya owner atau admin yang bisa membuat item untuk seluruh ruang kerja",
+        message: t("custom.orgCreateAdminOnly"),
       });
     }
     validateBody(input.kind, input.body);
@@ -150,11 +151,11 @@ export const customizationsRouter = {
     const patch = input.patch;
     // The kind never changes, so a plugin always keeps a manifest body.
     if (patch.kind && patch.kind !== current.kind) {
-      throw new ORPCError("BAD_REQUEST", { message: "Jenis item tidak bisa diubah" });
+      throw new ORPCError("BAD_REQUEST", { message: t("custom.kindFixed") });
     }
     if (patch.scope === "org" && !isOrgAdmin(context.role)) {
       throw new ORPCError("FORBIDDEN", {
-        message: "Hanya owner atau admin yang bisa membagikan ke seluruh ruang kerja",
+        message: t("custom.shareAdminOnly"),
       });
     }
     if (patch.body !== undefined) validateBody(current.kind, patch.body);

@@ -1,4 +1,5 @@
 import { type FormEvent, useEffect, useRef, useState } from "react";
+import { useT } from "../../i18n/index.ts";
 import { Button } from "./button.tsx";
 import { Input } from "./input.tsx";
 
@@ -8,7 +9,7 @@ export function PromptDialog({
   title,
   label,
   initialValue = "",
-  confirmLabel = "Simpan",
+  confirmLabel,
   inputType = "text",
   onSubmit,
   onCancel,
@@ -22,6 +23,7 @@ export function PromptDialog({
   onSubmit: (value: string) => void;
   onCancel: () => void;
 }) {
+  const t = useT();
   const ref = useRef<HTMLDialogElement>(null);
   const [value, setValue] = useState(initialValue);
   useEffect(() => {
@@ -61,10 +63,10 @@ export function PromptDialog({
         />
         <div className="mt-6 flex justify-end gap-2">
           <Button variant="secondary" onClick={onCancel}>
-            Batal
+            {t("common.cancel")}
           </Button>
           <Button type="submit" disabled={!value.trim()}>
-            {confirmLabel}
+            {confirmLabel ?? t("common.save")}
           </Button>
         </div>
       </form>

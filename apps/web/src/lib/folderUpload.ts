@@ -1,4 +1,5 @@
 import { IGNORED_DIRECTORIES, normalizeRelativePath, skipReason, stripRootFolder } from "@orbs/protocol";
+import { t } from "../i18n/index.ts";
 import { rpc } from "./rpc.ts";
 
 export interface PickedFile {
@@ -17,7 +18,7 @@ const ignoredDirs = new Set<string>(IGNORED_DIRECTORIES);
 /** Files from `<input type="file" webkitdirectory>`: paths start with the chosen folder name. */
 export function fromFileList(list: FileList): PickedFolder {
   const all = Array.from(list);
-  const rootName = all[0]?.webkitRelativePath.split("/")[0] || "Proyek";
+  const rootName = all[0]?.webkitRelativePath.split("/")[0] || t("code.defaultProjectName");
   return filter(
     rootName,
     all.map((file) => ({ path: stripRootFolder(file.webkitRelativePath || file.name), file })),

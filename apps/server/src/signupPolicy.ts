@@ -5,6 +5,8 @@
  * - domain:      only emails whose domain is in ORBS_SIGNUP_DOMAINS
  * The very first account is always allowed so a fresh install can be bootstrapped.
  */
+import { t } from "./i18n.ts";
+
 export type SignupMode = "open" | "invite-only" | "domain";
 
 export interface SignupCheck {
@@ -41,12 +43,11 @@ export function decideSignup(check: SignupCheck): SignupDecision {
       ? { allowed: true }
       : {
           allowed: false,
-          reason:
-            "Pendaftaran hanya lewat tautan undangan. Minta admin mengirim tautan undangan untuk email kamu.",
+          reason: t("signup.inviteOnly"),
         };
   }
   const domain = emailDomain(check.email);
   return domain && check.allowedDomains.includes(domain)
     ? { allowed: true }
-    : { allowed: false, reason: "Email ini tidak diizinkan mendaftar. Gunakan email kantor kamu." };
+    : { allowed: false, reason: t("signup.domain") };
 }

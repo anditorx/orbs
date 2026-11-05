@@ -4,6 +4,7 @@ import { ORPCError } from "@orpc/server";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { audit } from "../audit.ts";
 import { db } from "../db.ts";
+import { t } from "../i18n.ts";
 import {
   budgetStatusFor,
   byDay,
@@ -25,7 +26,7 @@ async function requireMember(orgId: string, userId: string) {
     .innerJoin(schema.user, eq(schema.user.id, schema.member.userId))
     .where(and(eq(schema.member.organizationId, orgId), eq(schema.member.userId, userId)))
     .limit(1);
-  if (!row) throw new ORPCError("NOT_FOUND", { message: "Anggota tidak ditemukan di ruang kerja ini" });
+  if (!row) throw new ORPCError("NOT_FOUND", { message: t("usage.memberNotInOrg") });
   return row;
 }
 
@@ -35,7 +36,7 @@ async function requireProject(orgId: string, projectId: string) {
     .from(schema.project)
     .where(and(eq(schema.project.id, projectId), eq(schema.project.orgId, orgId)))
     .limit(1);
-  if (!row) throw new ORPCError("NOT_FOUND", { message: "Proyek tidak ditemukan" });
+  if (!row) throw new ORPCError("NOT_FOUND", { message: t("common.projectNotFound") });
 }
 
 export const usageRouter = {
@@ -223,7 +224,7 @@ export const usageRouter = {
         .delete(schema.budget)
         .where(and(eq(schema.budget.id, input.id), eq(schema.budget.orgId, context.orgId)))
         .returning({ id: schema.budget.id });
-      if (deleted.length === 0) throw new ORPCError("NOT_FOUND", { message: "Batas tidak ditemukan" });
+      if (deleted.length === 0) throw new ORPCError("NOT_FOUND", { message: t("usage.budgetNotFound") });
       await audit({
         orgId: context.orgId,
         actorId: context.user.id,

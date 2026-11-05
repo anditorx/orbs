@@ -4,6 +4,7 @@ import { Code2, Moon, PanelLeftOpen, Search, Sparkles, Sun } from "lucide-react"
 import { useMemo } from "react";
 import { CommandPalette } from "../components/shell/CommandPalette.tsx";
 import { Sidebar } from "../components/shell/Sidebar.tsx";
+import { useT } from "../i18n/index.ts";
 import { orpc } from "../lib/rpc.ts";
 import { useTheme } from "../lib/theme.ts";
 import { setUi, useUi } from "../lib/uiState.ts";
@@ -12,26 +13,28 @@ import { modKey, useShortcuts } from "../lib/useShortcuts.ts";
 import { cn } from "../lib/utils.ts";
 
 function ModeSwitch() {
+  const t = useT();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const isCode = pathname.startsWith("/code");
   const base = "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-sm transition";
   return (
     <div className="flex rounded-full bg-muted p-1">
       <Link to="/" className={cn(base, !isCode ? "bg-card font-medium shadow-sm" : "text-muted-foreground")}>
-        <Sparkles className="size-4" /> Kerja
+        <Sparkles className="size-4" /> {t("shell.work")}
       </Link>
       <Link
         to="/code"
         search={{}}
         className={cn(base, isCode ? "bg-card font-medium shadow-sm" : "text-muted-foreground")}
       >
-        <Code2 className="size-4" /> Kode
+        <Code2 className="size-4" /> {t("shell.code")}
       </Link>
     </div>
   );
 }
 
 export function AppShell() {
+  const t = useT();
   const { data: me } = useQuery(orpc.me.queryOptions());
   const sidebarOpen = useUi((s) => s.sidebarOpen);
   const { toggleDark } = useTheme();
@@ -57,8 +60,8 @@ export function AppShell() {
               <button
                 type="button"
                 onClick={() => setUi({ sidebarOpen: true })}
-                aria-label="Tampilkan sidebar"
-                title={`Tampilkan sidebar (${modKey}B)`}
+                aria-label={t("shell.showSidebar")}
+                title={t("shell.showSidebarTitle", { key: modKey })}
                 className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
               >
                 <PanelLeftOpen className="size-4" />
@@ -72,13 +75,13 @@ export function AppShell() {
               onClick={() => setUi({ paletteOpen: true })}
               className="hidden items-center gap-2 rounded-lg border border-border px-2.5 py-1 text-xs text-muted-foreground hover:bg-muted md:inline-flex"
             >
-              <Search className="size-3.5" /> Cari <kbd>{modKey}K</kbd>
+              <Search className="size-3.5" /> {t("shell.search")} <kbd>{modKey}K</kbd>
             </button>
             <button
               type="button"
               onClick={toggleDark}
-              aria-label="Ganti tema terang/gelap"
-              title="Ganti tema terang/gelap"
+              aria-label={t("shell.toggleTheme")}
+              title={t("shell.toggleTheme")}
               className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
             >
               {isDark ? <Sun className="size-4" /> : <Moon className="size-4" />}

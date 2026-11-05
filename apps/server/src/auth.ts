@@ -9,6 +9,7 @@ import { memberAc, adminAc as orgAdminAc } from "better-auth/plugins/organizatio
 import { and, eq, gt, sql } from "drizzle-orm";
 import { db } from "./db.ts";
 import { env } from "./env.ts";
+import { t } from "./i18n.ts";
 import { decideSignup, parseDomains } from "./signupPolicy.ts";
 
 const allowedDomains = parseDomains(env.ORBS_SIGNUP_DOMAINS);
@@ -68,7 +69,7 @@ async function assertAnotherAdminRemains(organizationId: string, memberId: strin
     );
   if ((row?.n ?? 0) === 0) {
     throw new APIError("BAD_REQUEST", {
-      message: "Ruang kerja harus punya minimal satu admin. Jadikan anggota lain admin lebih dulu.",
+      message: t("auth.lastAdmin"),
     });
   }
 }
@@ -95,7 +96,7 @@ const KNOWN_ORG_ROLES = new Set<string>([ORG_ROLE.admin, ORG_ROLE.member]);
 function assertKnownOrgRole(role: string | undefined) {
   const roles = (role ?? "").split(",").map((r) => r.trim());
   if (roles.length === 0 || roles.some((r) => !KNOWN_ORG_ROLES.has(r))) {
-    throw new APIError("BAD_REQUEST", { message: "Peran tidak dikenal. Pilih Admin atau Anggota." });
+    throw new APIError("BAD_REQUEST", { message: t("auth.unknownRole") });
   }
 }
 
@@ -134,7 +135,7 @@ export const auth = betterAuth({
       defaultRole: SYSTEM_ROLE.user,
       adminRoles: [SYSTEM_ROLE.admin],
       roles: { [SYSTEM_ROLE.admin]: systemAdminAc, [SYSTEM_ROLE.user]: userAc },
-      bannedUserMessage: "Akun kamu diblokir oleh administrator. Hubungi admin untuk bantuan.",
+      bannedUserMessage: "Your account has been blocked by an administrator. Contact an admin for help.",
     }),
   ],
   databaseHooks: {

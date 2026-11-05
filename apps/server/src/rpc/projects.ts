@@ -6,8 +6,10 @@ import { audit } from "../audit.ts";
 import { db } from "../db.ts";
 import { env } from "../env.ts";
 import { appendEvent } from "../events.ts";
+import { t } from "../i18n.ts";
 import { loadFile, removeProject, saveFile } from "../workspaceStorage.ts";
 import { inOrg } from "./base.ts";
+import { dropPins, pinnedIds } from "./pins.ts";
 
 const MB = 1024 * 1024;
 /** Text previews larger than this are truncated. */
@@ -26,6 +28,7 @@ const projectColumns = {
 
 type ProjectRow = {
   id: string;
+  createdBy: string | null;
   name: string;
   mode: "work" | "code";
   createdAt: Date;
@@ -34,13 +37,15 @@ type ProjectRow = {
   totalBytes: number | string;
 };
 
-function toProject(row: ProjectRow): Project {
+function toProject(row: ProjectRow, pinned = false, editable = false): Project {
   return {
     id: row.id,
     name: row.name,
     mode: row.mode,
     fileCount: row.fileCount,
     totalBytes: Number(row.totalBytes),
+    pinned,
+    editable,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -52,7 +57,7 @@ async function requireProject(orgId: string, projectId: string) {
     .from(schema.project)
     .where(and(eq(schema.project.id, projectId), eq(schema.project.orgId, orgId)))
     .limit(1);
-  if (!row) throw new ORPCError("NOT_FOUND", { message: "Proyek tidak ditemukan" });
+  if (!row) throw new ORPCError("NOT_FOUND", { message: t("common.projectNotFound") });
   return row;
 }
 
@@ -72,7 +77,10 @@ export const projectsRouter = {
           : eq(schema.project.orgId, context.orgId),
       )
       .orderBy(desc(schema.project.updatedAt));
-    return rows.map(toProject);
+    const pinned = await pinnedIds(context.orgId, context.user.id, "project");
+    return rows.map((row) =>
+      toProject(row, pinned.has(row.id), row.createdBy === context.user.id || isOrgAdmin(context.role)),
+    );
   }),
 
   create: inOrg.projects.create.handler(async ({ context, input }) => {
@@ -89,13 +97,43 @@ export const projectsRouter = {
       payload: { projectId: row.id, name: row.name, mode: row.mode },
       actorId: context.user.id,
     });
-    return toProject({ ...row, fileCount: 0, totalBytes: 0 });
+    return toProject({ ...row, fileCount: 0, totalBytes: 0 }, false, true);
+  }),
+
+  rename: inOrg.projects.rename.handler(async ({ context, input }) => {
+    const [row] = await db
+      .select({ id: schema.project.id, name: schema.project.name, createdBy: schema.project.createdBy })
+      .from(schema.project)
+      .where(and(eq(schema.project.id, input.projectId), eq(schema.project.orgId, context.orgId)))
+      .limit(1);
+    if (!row) throw new ORPCError("NOT_FOUND", { message: t("common.projectNotFound") });
+    if (row.createdBy !== context.user.id && !isOrgAdmin(context.role)) {
+      throw new ORPCError("FORBIDDEN", { message: t("project.renameForbidden") });
+    }
+    await db.update(schema.project).set({ name: input.name }).where(eq(schema.project.id, row.id));
+    // Org-level event so other open tabs and members refresh their lists.
+    await appendEvent({
+      orgId: context.orgId,
+      streamType: "org",
+      streamId: context.orgId,
+      type: "project.renamed",
+      payload: { projectId: row.id, name: input.name },
+      actorId: context.user.id,
+    });
+    await audit({
+      orgId: context.orgId,
+      actorId: context.user.id,
+      action: "project.rename",
+      targetType: "project",
+      targetId: row.id,
+      metadata: { from: row.name, to: input.name },
+    });
+    return { ok: true as const };
   }),
 
   uploadFiles: inOrg.projects.uploadFiles.handler(async ({ context, input }) => {
     const project = await requireProject(context.orgId, input.projectId);
-    if (project.mode !== "code")
-      throw new ORPCError("BAD_REQUEST", { message: "Hanya proyek Kode yang menerima file" });
+    if (project.mode !== "code") throw new ORPCError("BAD_REQUEST", { message: t("project.codeOnly") });
 
     let fileCount = project.fileCount;
     let totalBytes = Number(project.totalBytes);
@@ -182,7 +220,7 @@ export const projectsRouter = {
 
   readFile: inOrg.projects.readFile.handler(async ({ context, input }) => {
     const path = normalizeRelativePath(input.path);
-    if (!path) throw new ORPCError("BAD_REQUEST", { message: "Path tidak valid" });
+    if (!path) throw new ORPCError("BAD_REQUEST", { message: t("project.invalidPath") });
     const [indexed] = await db
       .select({ path: schema.projectFile.path })
       .from(schema.projectFile)
@@ -194,7 +232,7 @@ export const projectsRouter = {
         ),
       )
       .limit(1);
-    if (!indexed) throw new ORPCError("NOT_FOUND", { message: "File tidak ditemukan" });
+    if (!indexed) throw new ORPCError("NOT_FOUND", { message: t("project.fileNotFound") });
     const { size, bytes, truncated } = await loadFile(
       context.orgId,
       input.projectId,
@@ -211,13 +249,14 @@ export const projectsRouter = {
       .from(schema.project)
       .where(and(eq(schema.project.id, input.projectId), eq(schema.project.orgId, context.orgId)))
       .limit(1);
-    if (!row) throw new ORPCError("NOT_FOUND", { message: "Proyek tidak ditemukan" });
+    if (!row) throw new ORPCError("NOT_FOUND", { message: t("common.projectNotFound") });
     if (row.createdBy !== context.user.id && !isOrgAdmin(context.role)) {
       throw new ORPCError("FORBIDDEN", {
-        message: "Hanya pembuat atau admin yang bisa menghapus proyek ini",
+        message: t("project.deleteForbidden"),
       });
     }
     await db.delete(schema.project).where(eq(schema.project.id, row.id)); // project_file rows cascade
+    await dropPins(context.orgId, "project", row.id);
     await removeProject(context.orgId, row.id);
     await audit({
       orgId: context.orgId,
@@ -225,6 +264,14 @@ export const projectsRouter = {
       action: "project.delete",
       targetType: "project",
       targetId: row.id,
+    });
+    await appendEvent({
+      orgId: context.orgId,
+      streamType: "org",
+      streamId: context.orgId,
+      type: "project.deleted",
+      payload: { projectId: row.id },
+      actorId: context.user.id,
     });
     return { deleted: true as const };
   }),

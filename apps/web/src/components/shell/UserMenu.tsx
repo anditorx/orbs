@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Check, ChevronsUpDown, LogOut, Plus, SlidersHorizontal } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { useT } from "../../i18n/index.ts";
 import { authClient } from "../../lib/auth.ts";
 import { orpc } from "../../lib/rpc.ts";
 
@@ -16,6 +17,7 @@ function initials(name: string) {
 
 /** Bottom-of-sidebar menu: who you are, which workspace is active, sign out. */
 export function UserMenu() {
+  const t = useT();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { data: me } = useQuery(orpc.me.queryOptions());
@@ -70,7 +72,7 @@ export function UserMenu() {
       {open && (
         <div className="absolute bottom-14 left-2 z-30 w-60 rounded-xl border border-border bg-card p-1 shadow-lg">
           <p className="px-2 pt-1.5 pb-1 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
-            Ruang kerja
+            {t("menu.workspaces")}
           </p>
           {orgs.map((org) => (
             <button
@@ -89,7 +91,7 @@ export function UserMenu() {
               onClick={() => setOpen(false)}
               className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-muted-foreground hover:bg-muted"
             >
-              <Plus className="size-4" /> Ruang kerja baru
+              <Plus className="size-4" /> {t("menu.newWorkspace")}
             </Link>
           )}
           <div className="my-1 border-t border-border" />
@@ -99,14 +101,14 @@ export function UserMenu() {
             onClick={() => setOpen(false)}
             className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-muted"
           >
-            <SlidersHorizontal className="size-4" /> Pengaturan akun
+            <SlidersHorizontal className="size-4" /> {t("menu.accountSettings")}
           </Link>
           <button
             type="button"
             onClick={signOut}
             className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-destructive hover:bg-muted"
           >
-            <LogOut className="size-4" /> Keluar
+            <LogOut className="size-4" /> {t("common.signOut")}
           </button>
         </div>
       )}

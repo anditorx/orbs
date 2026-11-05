@@ -13,20 +13,24 @@ import { and, desc, eq } from "drizzle-orm";
 import { audit } from "../audit.ts";
 import { db } from "../db.ts";
 import { appendEvent, createEventVisibility, eventBus, listVisibleEvents } from "../events.ts";
+import { t } from "../i18n.ts";
+import { isModelAvailable, modelsForOrg } from "../models.ts";
 import { assertWithinBudget } from "../usage.ts";
 import { adminRouter } from "./admin.ts";
 import { authed, inOrg, os } from "./base.ts";
 import { customizationsRouter } from "./customizations.ts";
+import { dropPins, pinnedIds, pinsRouter } from "./pins.ts";
 import { projectsRouter } from "./projects.ts";
 import { usageRouter } from "./usage.ts";
 
-function toThread(row: typeof schema.thread.$inferSelect): Thread {
+function toThread(row: typeof schema.thread.$inferSelect, pinned = false): Thread {
   return {
     id: row.id,
     projectId: row.projectId,
     title: row.title,
     mode: row.mode,
     engine: row.engine as Engine,
+    pinned,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -74,39 +78,41 @@ export const router = os.router({
 
   projects: projectsRouter,
 
+  pins: pinsRouter,
+
   usage: usageRouter,
 
   customizations: customizationsRouter,
 
   engines: {
     list: inOrg.engines.list.handler(async ({ context }) => {
-      const models = await db
-        .select()
-        .from(schema.modelCatalog)
-        .where(and(eq(schema.modelCatalog.orgId, context.orgId), eq(schema.modelCatalog.enabled, true)));
+      const models = await modelsForOrg(context.orgId);
+      const usable = models.filter((m) => m.available);
       const options: EngineOption[] = [
         {
           engine: { kind: "auto" },
-          label: "Otomatis",
-          description: "Orbs memilih model yang paling hemat dan cukup pintar untuk tiap permintaan.",
-          available: models.length > 0,
-          ...(models.length > 0 ? {} : { reason: "Admin belum menambahkan model ke katalog." }),
+          label: t("engine.auto"),
+          description: t("engine.autoDesc"),
+          available: usable.length > 0,
+          ...(usable.length > 0 ? {} : { reason: t("engine.noCatalog") }),
         },
         ...models.map(
           (m): EngineOption => ({
             engine: { kind: "model", provider: m.provider, modelId: m.modelId },
             label: m.displayName,
-            description: `${m.provider} · data maks: ${m.maxDataClass}`,
-            available: true,
+            description: t("engine.modelDesc", { provider: m.provider, maxDataClass: m.maxDataClass }),
+            available: m.available,
+            // Listed but not usable: shown greyed out with the reason.
+            ...(m.off ? { reason: t(m.off === "global" ? "engine.globalOff" : "engine.orgOff") } : {}),
           }),
         ),
         ...EXTERNAL_AGENTS.map(
           (a): EngineOption => ({
             engine: { kind: "agent", harness: a.harness },
             label: a.label,
-            description: "Agent coding eksternal lewat harness adapter (mode Kode).",
+            description: t("engine.agentDesc"),
             available: false,
-            reason: "Belum tersedia — direncanakan di Fase 5.",
+            reason: t("engine.agentSoon"),
           }),
         ),
       ];
@@ -123,17 +129,25 @@ export const router = os.router({
         .where(and(eq(schema.thread.orgId, context.orgId), eq(schema.thread.createdBy, context.user.id)))
         .orderBy(desc(schema.thread.updatedAt))
         .limit(input.limit);
-      return rows.map(toThread);
+      const pinned = await pinnedIds(context.orgId, context.user.id, "thread");
+      return rows.map((row) => toThread(row, pinned.has(row.id)));
     }),
 
     create: inOrg.threads.create.handler(async ({ context, input }) => {
+      if (input.engine.kind === "model") {
+        // A model an administrator switched off can't be chosen, even by a stale client.
+        const { provider, modelId } = input.engine;
+        if (!(await isModelAvailable(context.orgId, provider, modelId))) {
+          throw new ORPCError("BAD_REQUEST", { message: t("engine.notAvailable") });
+        }
+      }
       if (input.projectId) {
         const [project] = await db
           .select({ id: schema.project.id })
           .from(schema.project)
           .where(and(eq(schema.project.id, input.projectId), eq(schema.project.orgId, context.orgId)))
           .limit(1);
-        if (!project) throw new ORPCError("NOT_FOUND", { message: "Proyek tidak ditemukan" });
+        if (!project) throw new ORPCError("NOT_FOUND", { message: t("common.projectNotFound") });
       }
       return db.transaction(async (tx) => {
         const [row] = await tx
@@ -175,7 +189,7 @@ export const router = os.router({
           ),
         )
         .limit(1);
-      if (!thread) throw new ORPCError("NOT_FOUND", { message: "Thread not found" });
+      if (!thread) throw new ORPCError("NOT_FOUND", { message: t("common.threadNotFound") });
       // Refuse new work once a monthly budget (global or for this project) is used up.
       await assertWithinBudget(context.orgId, context.user.id, thread.projectId);
       return db.transaction(async (tx) => {
@@ -190,7 +204,7 @@ export const router = os.router({
             ),
           )
           .returning({ id: schema.thread.id });
-        if (!row) throw new ORPCError("NOT_FOUND", { message: "Thread not found" });
+        if (!row) throw new ORPCError("NOT_FOUND", { message: t("common.threadNotFound") });
         const event = await appendEvent(
           {
             orgId: context.orgId,
@@ -219,7 +233,7 @@ export const router = os.router({
             ),
           )
           .returning();
-        if (!row) throw new ORPCError("NOT_FOUND", { message: "Percakapan tidak ditemukan" });
+        if (!row) throw new ORPCError("NOT_FOUND", { message: t("common.threadNotFound") });
         await appendEvent(
           {
             orgId: context.orgId,
@@ -242,10 +256,10 @@ export const router = os.router({
           .from(schema.thread)
           .where(and(eq(schema.thread.id, input.threadId), eq(schema.thread.orgId, context.orgId)))
           .limit(1);
-        if (!row) throw new ORPCError("NOT_FOUND", { message: "Percakapan tidak ditemukan" });
+        if (!row) throw new ORPCError("NOT_FOUND", { message: t("common.threadNotFound") });
         if (row.createdBy !== context.user.id && !isOrgAdmin(context.role)) {
           throw new ORPCError("FORBIDDEN", {
-            message: "Hanya pembuat atau admin yang bisa menghapus percakapan ini",
+            message: t("thread.deleteForbidden"),
           });
         }
         // Hard delete: the thread's own event stream holds message content, so it goes too.
@@ -259,6 +273,7 @@ export const router = os.router({
             ),
           );
         await tx.delete(schema.thread).where(eq(schema.thread.id, row.id));
+        await dropPins(context.orgId, "thread", row.id, tx);
         // Org-level event so other open tabs drop the conversation from their lists.
         await appendEvent(
           {

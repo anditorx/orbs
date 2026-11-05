@@ -38,6 +38,8 @@ export const Thread = z.object({
   title: z.string(),
   mode: Mode,
   engine: Engine,
+  /** Pinned by the current user: shown first in the sidebar. */
+  pinned: z.boolean(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
@@ -79,7 +81,8 @@ export const AdminUser = z.object({
   banned: z.boolean(),
   banReason: z.string().nullable(),
   createdAt: z.string(),
-  orgCount: z.number().int(),
+  /** Every organization this account belongs to, with its role there. */
+  orgs: z.array(z.object({ id: z.string(), name: z.string(), role: z.string() })),
 });
 export type AdminUser = z.infer<typeof AdminUser>;
 
@@ -113,6 +116,10 @@ export const Project = z.object({
   mode: Mode,
   fileCount: z.number().int(),
   totalBytes: z.number().int(),
+  /** Pinned by the current user: shown first in the sidebar. */
+  pinned: z.boolean(),
+  /** True when the current user may rename or delete it (creator or organization admin). */
+  editable: z.boolean(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
@@ -137,7 +144,7 @@ export type FileContent = z.infer<typeof FileContent>;
 export const BudgetUnit = z.enum(["tokens", "idr"]);
 export type BudgetUnit = z.infer<typeof BudgetUnit>;
 
-export const Period = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, "Format periode: YYYY-MM");
+export const Period = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, "Use the format YYYY-MM");
 
 export const UsageTotals = z.object({
   requests: z.number().int(),
@@ -296,6 +303,24 @@ export const CustomizationInput = z.object({
 });
 export type CustomizationInput = z.infer<typeof CustomizationInput>;
 
+/**
+ * Partial update of a customization. Deliberately NOT `CustomizationInput.partial()`: Zod still
+ * applies `.default()` values to fields that were left out, which would silently reset them
+ * (toggling "enabled" would wipe the body, description, scope and project).
+ */
+export const CustomizationPatch = z
+  .object({
+    kind: CustomizationKind,
+    scope: CustomizationScope,
+    projectId: z.string().nullable(),
+    name: z.string().trim().min(1).max(120),
+    description: z.string().trim().max(500),
+    body: z.string().max(100_000),
+    enabled: z.boolean(),
+  })
+  .partial();
+export type CustomizationPatch = z.infer<typeof CustomizationPatch>;
+
 // ---- System administration of companies and accounts ----
 
 export const AdminOrgMember = z.object({
@@ -323,3 +348,64 @@ export const AdminOrgDetail = z.object({
   invitations: z.array(AdminOrgInvitation),
 });
 export type AdminOrgDetail = z.infer<typeof AdminOrgDetail>;
+
+// ---- Model management (system administrators) ----
+
+export const AdminModel = z.object({
+  id: z.string(),
+  provider: z.string(),
+  modelId: z.string(),
+  displayName: z.string(),
+  inputUsdPerMtok: z.number().nullable(),
+  outputUsdPerMtok: z.number().nullable(),
+  qualityScore: z.number().nullable(),
+  maxDataClass: DataClass,
+  /** Global switch: an inactive model is unusable in every organization. */
+  active: z.boolean(),
+  /** In how many organizations this model appears. */
+  orgCount: z.number().int(),
+});
+export type AdminModel = z.infer<typeof AdminModel>;
+
+export const AdminModelInput = z.object({
+  provider: z.string().trim().min(1).max(100),
+  modelId: z.string().trim().min(1).max(200),
+  displayName: z.string().trim().min(1).max(200),
+  inputUsdPerMtok: z.number().min(0).max(1_000_000).nullable().default(null),
+  outputUsdPerMtok: z.number().min(0).max(1_000_000).nullable().default(null),
+  qualityScore: z.number().min(0).max(1).nullable().default(null),
+  maxDataClass: DataClass.default("internal"),
+  active: z.boolean().default(true),
+});
+export type AdminModelInput = z.infer<typeof AdminModelInput>;
+
+/** Partial update of a model; no defaults, so leaving a field out never changes it (see CustomizationPatch). */
+export const AdminModelPatch = z
+  .object({
+    provider: z.string().trim().min(1).max(100),
+    modelId: z.string().trim().min(1).max(200),
+    displayName: z.string().trim().min(1).max(200),
+    inputUsdPerMtok: z.number().min(0).max(1_000_000).nullable(),
+    outputUsdPerMtok: z.number().min(0).max(1_000_000).nullable(),
+    qualityScore: z.number().min(0).max(1).nullable(),
+    maxDataClass: DataClass,
+    active: z.boolean(),
+  })
+  .partial();
+export type AdminModelPatch = z.infer<typeof AdminModelPatch>;
+
+/** One registry model as seen from a single organization. */
+export const OrgModelRow = z.object({
+  modelId: z.string(),
+  provider: z.string(),
+  model: z.string(),
+  displayName: z.string(),
+  maxDataClass: DataClass,
+  /** The model's global switch. */
+  active: z.boolean(),
+  /** Whether the model appears for this organization. */
+  assigned: z.boolean(),
+  /** Whether it can be used there (only meaningful when assigned). */
+  enabled: z.boolean(),
+});
+export type OrgModelRow = z.infer<typeof OrgModelRow>;

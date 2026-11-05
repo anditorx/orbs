@@ -1,14 +1,16 @@
 import { schema } from "@orbs/db";
 import { type AdminOrg, type AdminUser, type AuditEntry, isSystemAdmin, SYSTEM_ROLE } from "@orbs/protocol";
 import { ORPCError } from "@orpc/server";
-import { and, count, desc, eq, ilike, ne, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, ilike, inArray, ne, or, sql } from "drizzle-orm";
 import { audit } from "../audit.ts";
 import { auth } from "../auth.ts";
 import { db } from "../db.ts";
 import { env } from "../env.ts";
+import { t } from "../i18n.ts";
 import { parseDomains } from "../signupPolicy.ts";
 import { resolvePeriod } from "../usage.ts";
 import { adminOrgManagement, adminUserManagement } from "./adminManage.ts";
+import { adminModelsRouter } from "./adminModels.ts";
 import { systemAdmin } from "./base.ts";
 
 /** Better-Auth admin endpoints throw APIError; surface their message to the admin UI. */
@@ -66,13 +68,30 @@ export const adminRouter = {
           banned: schema.user.banned,
           banReason: schema.user.banReason,
           createdAt: schema.user.createdAt,
-          // Fully qualified outer column: inside a select, drizzle renders `${schema.user.id}` unqualified.
-          orgCount: sql<number>`(select count(*)::int from "member" m where m.user_id = "user"."id")`,
         })
         .from(schema.user)
         .where(term ? or(ilike(schema.user.name, term), ilike(schema.user.email, term)) : undefined)
         .orderBy(desc(schema.user.createdAt))
         .limit(500);
+      const memberships =
+        rows.length === 0
+          ? []
+          : await db
+              .select({
+                userId: schema.member.userId,
+                id: schema.organization.id,
+                name: schema.organization.name,
+                role: schema.member.role,
+              })
+              .from(schema.member)
+              .innerJoin(schema.organization, eq(schema.organization.id, schema.member.organizationId))
+              .where(
+                inArray(
+                  schema.member.userId,
+                  rows.map((r) => r.id),
+                ),
+              )
+              .orderBy(asc(schema.organization.name));
       return rows.map(
         (r): AdminUser => ({
           id: r.id,
@@ -82,24 +101,45 @@ export const adminRouter = {
           banned: Boolean(r.banned),
           banReason: r.banReason,
           createdAt: r.createdAt.toISOString(),
-          orgCount: r.orgCount,
+          orgs: memberships
+            .filter((m) => m.userId === r.id)
+            .map((m) => ({ id: m.id, name: m.name, role: m.role })),
         }),
       );
     }),
 
     create: systemAdmin.admin.users.create.handler(async ({ context, input }) => {
+      // Check the company first so a bad id never leaves a half-created account behind.
+      const [org] = input.orgId
+        ? await db
+            .select({ id: schema.organization.id })
+            .from(schema.organization)
+            .where(eq(schema.organization.id, input.orgId))
+            .limit(1)
+        : [];
+      if (input.orgId && !org) throw new ORPCError("NOT_FOUND", { message: t("common.orgNotFound") });
       const result = await callAuth(() =>
         auth.api.createUser({
           body: { name: input.name, email: input.email, password: input.password, role: input.role },
           headers: context.headers,
         }),
       );
+      if (org) {
+        await db.insert(schema.member).values({
+          id: crypto.randomUUID(),
+          organizationId: org.id,
+          userId: result.user.id,
+          role: input.orgRole,
+          createdAt: new Date(),
+        });
+      }
       await audit({
+        orgId: org?.id ?? null,
         actorId: context.user.id,
         action: "system.user.create",
         targetType: "user",
         targetId: result.user.id,
-        metadata: { role: input.role },
+        metadata: { role: input.role, ...(org ? { orgRole: input.orgRole } : {}) },
       });
       return { id: result.user.id };
     }),
@@ -108,11 +148,11 @@ export const adminRouter = {
       if (input.role !== SYSTEM_ROLE.admin) {
         if (input.userId === context.user.id) {
           throw new ORPCError("BAD_REQUEST", {
-            message: "Kamu tidak bisa mencabut peran admin dirimu sendiri.",
+            message: t("admin.cannotRevokeSelf"),
           });
         }
         if ((await countAdmins(input.userId)) === 0) {
-          throw new ORPCError("BAD_REQUEST", { message: "Harus ada minimal satu administrator sistem." });
+          throw new ORPCError("BAD_REQUEST", { message: t("admin.needSystemAdmin") });
         }
       }
       await callAuth(() =>
@@ -155,6 +195,8 @@ export const adminRouter = {
       return { ok: true as const };
     }),
   },
+
+  models: adminModelsRouter,
 
   orgs: {
     ...adminOrgManagement,

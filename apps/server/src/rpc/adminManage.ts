@@ -6,6 +6,7 @@ import { and, asc, count, eq, gt, ne, sql } from "drizzle-orm";
 import { audit } from "../audit.ts";
 import { auth } from "../auth.ts";
 import { db } from "../db.ts";
+import { t } from "../i18n.ts";
 import { removeProject } from "../workspaceStorage.ts";
 import { systemAdmin } from "./base.ts";
 
@@ -32,7 +33,7 @@ async function requireOrg(orgId: string) {
     .from(schema.organization)
     .where(eq(schema.organization.id, orgId))
     .limit(1);
-  if (!org) throw new ORPCError("NOT_FOUND", { message: "Perusahaan tidak ditemukan" });
+  if (!org) throw new ORPCError("NOT_FOUND", { message: t("common.orgNotFound") });
   return org;
 }
 
@@ -42,13 +43,37 @@ async function requireUser(userId: string) {
     .from(schema.user)
     .where(eq(schema.user.id, userId))
     .limit(1);
-  if (!user) throw new ORPCError("NOT_FOUND", { message: "Pengguna tidak ditemukan" });
+  if (!user) throw new ORPCError("NOT_FOUND", { message: t("common.userNotFound") });
   return user;
 }
 
 const INVITATION_TTL_MS = 7 * 24 * 3_600_000;
 
+function slugify(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 48);
+}
+
 export const adminOrgManagement = {
+  create: systemAdmin.admin.orgs.create.handler(async ({ context, input }) => {
+    const id = crypto.randomUUID();
+    // Same shape as the onboarding flow: readable slug plus a short random suffix for uniqueness.
+    const slug = `${slugify(input.name) || "org"}-${crypto.randomUUID().slice(0, 4)}`;
+    await db.insert(schema.organization).values({ id, name: input.name, slug, createdAt: new Date() });
+    await audit({
+      orgId: id,
+      actorId: context.user.id,
+      action: "system.org.create",
+      targetType: "organization",
+      targetId: id,
+      metadata: { name: input.name },
+    });
+    return { id };
+  }),
+
   detail: systemAdmin.admin.orgs.detail.handler(async ({ input }): Promise<AdminOrgDetail> => {
     const org = await requireOrg(input.orgId);
     const [members, invitations] = await Promise.all([
@@ -109,7 +134,7 @@ export const adminOrgManagement = {
   delete: systemAdmin.admin.orgs.delete.handler(async ({ context, input }) => {
     const org = await requireOrg(input.orgId);
     if (input.confirmName.trim() !== org.name) {
-      throw new ORPCError("BAD_REQUEST", { message: "Nama perusahaan tidak cocok. Penghapusan dibatalkan." });
+      throw new ORPCError("BAD_REQUEST", { message: t("admin.nameMismatch") });
     }
     const projects = await db
       .select({ id: schema.project.id })
@@ -170,7 +195,7 @@ export const adminOrgManagement = {
       .innerJoin(schema.user, eq(schema.user.id, schema.member.userId))
       .where(and(eq(schema.member.organizationId, org.id), eq(sql`lower(${schema.user.email})`, email)))
       .limit(1);
-    if (existing) throw new ORPCError("BAD_REQUEST", { message: "Orang ini sudah menjadi anggota." });
+    if (existing) throw new ORPCError("BAD_REQUEST", { message: t("admin.alreadyMember") });
     const [row] = await db
       .insert(schema.invitation)
       .values({
@@ -202,7 +227,7 @@ export const adminOrgManagement = {
       .set({ role: input.role })
       .where(and(eq(schema.member.id, input.memberId), eq(schema.member.organizationId, org.id)))
       .returning({ userId: schema.member.userId });
-    if (updated.length === 0) throw new ORPCError("NOT_FOUND", { message: "Anggota tidak ditemukan" });
+    if (updated.length === 0) throw new ORPCError("NOT_FOUND", { message: t("common.memberNotFound") });
     await audit({
       orgId: org.id,
       actorId: context.user.id,
@@ -220,7 +245,7 @@ export const adminOrgManagement = {
       .delete(schema.member)
       .where(and(eq(schema.member.id, input.memberId), eq(schema.member.organizationId, org.id)))
       .returning({ userId: schema.member.userId });
-    if (removed.length === 0) throw new ORPCError("NOT_FOUND", { message: "Anggota tidak ditemukan" });
+    if (removed.length === 0) throw new ORPCError("NOT_FOUND", { message: t("common.memberNotFound") });
     // Drop sessions that still point at this company so the person isn't left inside it.
     await db
       .update(schema.session)
@@ -272,7 +297,7 @@ export const adminUserManagement = {
       .from(schema.user)
       .where(and(eq(sql`lower(${schema.user.email})`, email), ne(schema.user.id, target.id)))
       .limit(1);
-    if (taken) throw new ORPCError("BAD_REQUEST", { message: "Email itu sudah dipakai akun lain." });
+    if (taken) throw new ORPCError("BAD_REQUEST", { message: t("admin.emailTaken") });
     await db.update(schema.user).set({ email, emailVerified: false }).where(eq(schema.user.id, target.id));
     await db.delete(schema.session).where(eq(schema.session.userId, target.id));
     await audit({
@@ -287,7 +312,7 @@ export const adminUserManagement = {
   delete: systemAdmin.admin.users.delete.handler(async ({ context, input }) => {
     const target = await requireUser(input.userId);
     if (target.id === context.user.id) {
-      throw new ORPCError("BAD_REQUEST", { message: "Kamu tidak bisa menghapus akunmu sendiri." });
+      throw new ORPCError("BAD_REQUEST", { message: t("admin.cannotDeleteSelf") });
     }
     if (target.role === SYSTEM_ROLE.admin) {
       const [{ n } = { n: 0 }] = await db
@@ -295,7 +320,7 @@ export const adminUserManagement = {
         .from(schema.user)
         .where(and(eq(schema.user.role, SYSTEM_ROLE.admin), ne(schema.user.id, target.id)));
       if (n === 0) {
-        throw new ORPCError("BAD_REQUEST", { message: "Harus ada minimal satu administrator sistem." });
+        throw new ORPCError("BAD_REQUEST", { message: t("admin.needSystemAdmin") });
       }
     }
     await callAuth(() => auth.api.removeUser({ body: { userId: target.id }, headers: context.headers }));

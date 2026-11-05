@@ -18,6 +18,7 @@ import {
 import { ORPCError } from "@orpc/server";
 import { and, eq, gte, lt, type SQL, sql } from "drizzle-orm";
 import { db } from "./db.ts";
+import { t } from "./i18n.ts";
 
 const L = schema.usageLedger;
 
@@ -56,15 +57,9 @@ export interface UsageRecord {
  */
 export async function recordUsage(record: UsageRecord) {
   const [model] = await db
-    .select({ input: schema.modelCatalog.inputUsdPerMtok, output: schema.modelCatalog.outputUsdPerMtok })
-    .from(schema.modelCatalog)
-    .where(
-      and(
-        eq(schema.modelCatalog.orgId, record.orgId),
-        eq(schema.modelCatalog.provider, record.provider),
-        eq(schema.modelCatalog.modelId, record.modelId),
-      ),
-    )
+    .select({ input: schema.aiModel.inputUsdPerMtok, output: schema.aiModel.outputUsdPerMtok })
+    .from(schema.aiModel)
+    .where(and(eq(schema.aiModel.provider, record.provider), eq(schema.aiModel.modelId, record.modelId)))
     .limit(1);
   const fx = await getFxRate(record.orgId);
   const micro = costMicroUsd(record, {
@@ -329,9 +324,7 @@ export async function assertWithinBudget(orgId: string, userId: string, projectI
     (await budgetStatusFor(orgId, resolvePeriod(undefined), [userId], budgets)).get(userId) ?? [];
   const hit = statuses.find((s) => s.exceeded);
   if (hit) {
-    const where = hit.projectName ? ` untuk proyek "${hit.projectName}"` : "";
-    throw new ORPCError("FORBIDDEN", {
-      message: `Batas pemakaian bulanan${where} sudah habis. Hubungi admin ruang kerja untuk menambah atau mereset kuota.`,
-    });
+    const where = hit.projectName ? t("usage.exceededWhere", { project: hit.projectName }) : "";
+    throw new ORPCError("FORBIDDEN", { message: t("usage.exceeded", { where }) });
   }
 }

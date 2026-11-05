@@ -2,8 +2,8 @@
  * The three Orbs roles, in one place so server, web and database migrations agree on the names.
  *
  * - `system.admin`  an Orbs system administrator (user.role): manages the whole installation.
- * - `org.admin`     a company administrator (member.role): manages one company.
- * - `org.member`    an ordinary company user (member.role).
+ * - `org.admin`     an organization administrator (member.role): manages one organization.
+ * - `org.member`    an ordinary organization user (member.role).
  *
  * A person without a system role keeps the neutral account role `user`.
  */
@@ -26,8 +26,3 @@ export const isOrgAdmin = (role: string | null | undefined) => hasRole(role, ORG
 
 /** Postgres regex matching `member.role` values that include `org.admin`. */
 export const ORG_ADMIN_ROLE_SQL_PATTERN = "(^|,)org\\.admin(,|$)";
-
-export const ORG_ROLE_LABEL: Record<string, string> = {
-  [ORG_ROLE.admin]: "Admin",
-  [ORG_ROLE.member]: "Anggota",
-};

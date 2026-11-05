@@ -8,29 +8,36 @@ import { assertCanLeaveOrganization, auth, INVITATION_HEADER } from "./auth.ts";
 import { isBlockedAuthPath } from "./blockedAuthPaths.ts";
 import { env } from "./env.ts";
 import { eventBus } from "./events.ts";
+import { LANG_HEADER, parseLang, runWithLang, t } from "./i18n.ts";
 import { router } from "./rpc/router.ts";
 
 const rpc = new RPCHandler(router);
 const app = new Hono();
 
 app.use("*", logger());
+// Make the caller's language available to every handler and auth hook for this request.
+app.use("*", (c, next) => runWithLang(parseLang(c.req.header(LANG_HEADER)), next));
 app.use(
   "/api/*",
   cors({
     origin: env.ORBS_WEB_URL,
     credentials: true,
-    allowHeaders: ["Content-Type", "Authorization", INVITATION_HEADER],
+    allowHeaders: ["Content-Type", "Authorization", INVITATION_HEADER, LANG_HEADER],
   }),
 );
 app.use(
   "/rpc/*",
-  cors({ origin: env.ORBS_WEB_URL, credentials: true, allowHeaders: ["Content-Type", "Authorization"] }),
+  cors({
+    origin: env.ORBS_WEB_URL,
+    credentials: true,
+    allowHeaders: ["Content-Type", "Authorization", LANG_HEADER],
+  }),
 );
 
 app.get("/healthz", (c) => c.json({ ok: true }));
 app.use("/api/auth/*", async (c, next) => {
   if (isBlockedAuthPath(new URL(c.req.url).pathname)) {
-    return c.json({ message: "Tindakan ini dinonaktifkan di Orbs." }, 403);
+    return c.json({ message: t("http.blocked") }, 403);
   }
   if (c.req.method === "POST" && new URL(c.req.url).pathname === "/api/auth/organization/leave") {
     const body = (await c.req.raw

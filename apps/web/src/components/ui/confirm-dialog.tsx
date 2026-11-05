@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { useT } from "../../i18n/index.ts";
 import { Button } from "./button.tsx";
 
 /** Small accessible confirmation dialog built on the native <dialog> element. */
@@ -6,7 +7,7 @@ export function ConfirmDialog({
   open,
   title,
   description,
-  confirmLabel = "Hapus",
+  confirmLabel,
   busy = false,
   onConfirm,
   onCancel,
@@ -19,6 +20,7 @@ export function ConfirmDialog({
   onConfirm: () => void;
   onCancel: () => void;
 }) {
+  const t = useT();
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     const dialog = ref.current;
@@ -40,10 +42,10 @@ export function ConfirmDialog({
       <p className="mt-2 text-sm text-muted-foreground">{description}</p>
       <div className="mt-6 flex justify-end gap-2">
         <Button variant="secondary" onClick={onCancel} disabled={busy}>
-          Batal
+          {t("common.cancel")}
         </Button>
         <Button className="bg-destructive text-white" onClick={onConfirm} disabled={busy}>
-          {confirmLabel}
+          {confirmLabel ?? t("common.delete")}
         </Button>
       </div>
     </dialog>

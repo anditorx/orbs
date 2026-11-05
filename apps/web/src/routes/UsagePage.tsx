@@ -6,12 +6,15 @@ import { type FormEvent, type ReactNode, useState } from "react";
 import { Button } from "../components/ui/button.tsx";
 import { ConfirmDialog } from "../components/ui/confirm-dialog.tsx";
 import { Input } from "../components/ui/input.tsx";
+import { getLang, localeOf, t as tNow, useT } from "../i18n/index.ts";
 import { orpc } from "../lib/rpc.ts";
 import { cn } from "../lib/utils.ts";
 
-const idr = (n: number) => `Rp ${Math.round(n).toLocaleString("id-ID")}`;
-const num = (n: number) => Math.round(n).toLocaleString("id-ID");
-const unitValue = (unit: "tokens" | "idr", n: number) => (unit === "idr" ? idr(n) : `${num(n)} token`);
+// Numbers follow the interface language (1,234 in English, 1.234 in Indonesian).
+const num = (n: number) => Math.round(n).toLocaleString(localeOf(getLang()));
+const idr = (n: number) => `Rp ${num(n)}`;
+const unitValue = (unit: "tokens" | "idr", n: number) =>
+  unit === "idr" ? idr(n) : `${num(n)} ${tNow("usage.tokenWord")}`;
 
 function Stat({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
@@ -60,20 +63,21 @@ function Empty({ text }: { text: string }) {
 }
 
 function BudgetBar({ b }: { b: BudgetStatus }) {
+  const t = useT();
   const pct = Math.min(100, b.percent);
   const tone = b.exceeded ? "bg-destructive" : b.percent >= 80 ? "bg-amber-500" : "bg-primary";
   return (
     <div className="rounded-2xl border border-border bg-card p-4">
       <div className="flex flex-wrap items-baseline justify-between gap-2 text-sm">
         <span className="font-medium">
-          {b.projectName ? `Proyek ${b.projectName}` : "Semua proyek"} ·{" "}
-          {b.unit === "idr" ? "Rupiah" : "Token"} / bulan
+          {b.projectName ? t("usage.projectBudget", { name: b.projectName }) : t("usage.allProjects")} ·{" "}
+          {b.unit === "idr" ? t("usage.rupiah") : t("usage.tokens")} {t("usage.perMonth")}
           {b.userId === null && (
-            <span className="ml-2 text-xs text-muted-foreground">(default ruang kerja)</span>
+            <span className="ml-2 text-xs text-muted-foreground">{t("usage.workspaceDefault")}</span>
           )}
         </span>
         <span className="text-muted-foreground">
-          {unitValue(b.unit, b.used)} dari {unitValue(b.unit, b.limit)}
+          {t("usage.usedOf", { used: unitValue(b.unit, b.used), limit: unitValue(b.unit, b.limit) })}
         </span>
       </div>
       <div className="mt-2 h-2 overflow-hidden rounded-full bg-muted">
@@ -81,21 +85,24 @@ function BudgetBar({ b }: { b: BudgetStatus }) {
       </div>
       <p className={cn("mt-1.5 text-xs", b.exceeded ? "text-destructive" : "text-muted-foreground")}>
         {b.exceeded
-          ? "Batas habis — permintaan baru ditolak."
-          : `Sisa ${unitValue(b.unit, b.remaining)} (${b.percent}% terpakai)`}
+          ? t("usage.limitReached")
+          : t("usage.remaining", { remaining: unitValue(b.unit, b.remaining), percent: b.percent })}
       </p>
     </div>
   );
 }
 
 function ProjectTable({ rows }: { rows: UsageByProject[] }) {
-  if (rows.length === 0) return <Empty text="Belum ada pemakaian pada periode ini." />;
+  const t = useT();
+  if (rows.length === 0) return <Empty text={t("common.noUsage")} />;
   return (
-    <Table head={["Proyek", "Permintaan", "Token", "Biaya"]}>
+    <Table
+      head={[t("usage.col.project"), t("usage.col.requests"), t("usage.col.tokens"), t("usage.col.cost")]}
+    >
       {rows.map((r) => (
         <tr key={r.projectId ?? "none"} className="border-b border-border last:border-0">
           <td className="px-4 py-2">
-            {r.projectId ? (r.projectName ?? "(proyek dihapus)") : "Tanpa proyek"}
+            {r.projectId ? (r.projectName ?? t("usage.projectDeleted")) : t("usage.noProject")}
           </td>
           <td className="px-4 py-2 text-right">{num(r.requests)}</td>
           <td className="px-4 py-2 text-right">{num(r.totalTokens)}</td>
@@ -107,9 +114,10 @@ function ProjectTable({ rows }: { rows: UsageByProject[] }) {
 }
 
 function ModelTable({ rows }: { rows: UsageByModel[] }) {
-  if (rows.length === 0) return <Empty text="Belum ada pemakaian pada periode ini." />;
+  const t = useT();
+  if (rows.length === 0) return <Empty text={t("common.noUsage")} />;
   return (
-    <Table head={["Model", "Permintaan", "Token", "Biaya"]}>
+    <Table head={[t("usage.col.model"), t("usage.col.requests"), t("usage.col.tokens"), t("usage.col.cost")]}>
       {rows.map((r) => (
         <tr key={`${r.provider}/${r.modelId}`} className="border-b border-border last:border-0">
           <td className="px-4 py-2">
@@ -125,6 +133,7 @@ function ModelTable({ rows }: { rows: UsageByModel[] }) {
 }
 
 function DayBars({ rows }: { rows: Array<{ day: string; totalTokens: number; costIdr: number }> }) {
+  const t = useT();
   if (rows.length === 0) return null;
   const max = Math.max(...rows.map((r) => r.totalTokens), 1);
   return (
@@ -133,41 +142,44 @@ function DayBars({ rows }: { rows: Array<{ day: string; totalTokens: number; cos
         {rows.map((r) => (
           <div
             key={r.day}
-            title={`${r.day}: ${num(r.totalTokens)} token · ${idr(r.costIdr)}`}
+            title={`${r.day}: ${num(r.totalTokens)} ${t("usage.tokenWord")} · ${idr(r.costIdr)}`}
             className="min-w-1 flex-1 rounded-t bg-primary/70"
             style={{ height: `${Math.max(4, (r.totalTokens / max) * 100)}%` }}
           />
         ))}
       </div>
-      <p className="mt-2 text-xs text-muted-foreground">
-        Token per hari (zona waktu WIB). Arahkan kursor untuk detail.
-      </p>
+      <p className="mt-2 text-xs text-muted-foreground">{t("usage.chartHint")}</p>
     </div>
   );
 }
 
 function MyUsage({ period }: { period: string }) {
+  const t = useT();
   const { data } = useQuery(orpc.usage.mine.queryOptions({ input: { period } }));
-  if (!data) return <p className="text-sm text-muted-foreground">Memuat…</p>;
-  const t = data.totals;
+  if (!data) return <p className="text-sm text-muted-foreground">{t("common.loading")}</p>;
+  const tot = data.totals;
   return (
     <div className="space-y-6">
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Stat label="Total biaya" value={idr(t.costIdr)} />
+        <Stat label={t("usage.totalCost")} value={idr(tot.costIdr)} />
         <Stat
-          label="Total token"
-          value={num(t.totalTokens)}
-          hint={`${num(t.inputTokens)} masuk · ${num(t.outputTokens)} keluar`}
+          label={t("usage.totalTokens")}
+          value={num(tot.totalTokens)}
+          hint={t("usage.tokensInOut", { input: num(tot.inputTokens), output: num(tot.outputTokens) })}
         />
-        <Stat label="Token cache" value={num(t.cachedInputTokens)} hint="Bagian dari token masuk" />
         <Stat
-          label="Permintaan"
-          value={num(t.requests)}
-          hint={t.reasoningTokens ? `${num(t.reasoningTokens)} token reasoning` : undefined}
+          label={t("usage.cachedTokens")}
+          value={num(tot.cachedInputTokens)}
+          hint={t("usage.cachedHint")}
+        />
+        <Stat
+          label={t("usage.requests")}
+          value={num(tot.requests)}
+          hint={tot.reasoningTokens ? t("usage.reasoning", { count: num(tot.reasoningTokens) }) : undefined}
         />
       </div>
       {data.budgets.length > 0 && (
-        <Section title="Batas pemakaian bulan ini">
+        <Section title={t("usage.budgetsThisMonth")}>
           <div className="grid gap-3 lg:grid-cols-2">
             {data.budgets.map((b) => (
               <BudgetBar key={b.id} b={b} />
@@ -175,14 +187,14 @@ function MyUsage({ period }: { period: string }) {
           </div>
         </Section>
       )}
-      <Section title="Harian">
+      <Section title={t("usage.daily")}>
         <DayBars rows={data.byDay} />
-        {data.byDay.length === 0 && <Empty text="Belum ada pemakaian pada periode ini." />}
+        {data.byDay.length === 0 && <Empty text={t("common.noUsage")} />}
       </Section>
-      <Section title="Per proyek">
+      <Section title={t("usage.byProject")}>
         <ProjectTable rows={data.byProject} />
       </Section>
-      <Section title="Per model">
+      <Section title={t("usage.byModel")}>
         <ModelTable rows={data.byModel} />
       </Section>
     </div>
@@ -194,6 +206,7 @@ function tightest(budgets: BudgetStatus[]) {
 }
 
 function UserDetail({ userId, period, onClose }: { userId: string; period: string; onClose: () => void }) {
+  const t = useT();
   const { data } = useQuery(orpc.usage.userDetail.queryOptions({ input: { userId, period } }));
   if (!data) return null;
   return (
@@ -202,35 +215,43 @@ function UserDetail({ userId, period, onClose }: { userId: string; period: strin
         <div>
           <h3 className="font-semibold">{data.user.name}</h3>
           <p className="text-xs text-muted-foreground">
-            {data.user.email} · {idr(data.totals.costIdr)} · {num(data.totals.totalTokens)} token
+            {data.user.email} · {idr(data.totals.costIdr)} · {num(data.totals.totalTokens)}{" "}
+            {t("usage.tokenWord")}
           </p>
         </div>
         <Button variant="secondary" onClick={onClose}>
-          Tutup
+          {t("common.close")}
         </Button>
       </div>
       <p className="rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground">
-        Hanya metadata (proyek, model, jumlah). Isi dan judul percakapan bersifat pribadi dan tidak
-        ditampilkan.
+        {t("usage.detail.privacy")}
       </p>
       {data.budgets.map((b) => (
         <BudgetBar key={b.id} b={b} />
       ))}
-      <Section title="Dipakai untuk proyek apa">
+      <Section title={t("usage.detail.forProject")}>
         <ProjectTable rows={data.byProject} />
       </Section>
-      <Section title="Percakapan">
+      <Section title={t("usage.detail.conversations")}>
         {data.byThread.length === 0 ? (
-          <Empty text="Belum ada pemakaian pada periode ini." />
+          <Empty text={t("common.noUsage")} />
         ) : (
-          <Table head={["Percakapan", "Proyek", "Permintaan", "Token", "Biaya"]}>
+          <Table
+            head={[
+              t("usage.col.conversation"),
+              t("usage.col.project"),
+              t("usage.col.requests"),
+              t("usage.col.tokens"),
+              t("usage.col.cost"),
+            ]}
+          >
             {data.byThread.map((r) => (
               <tr key={r.threadId ?? "none"} className="border-b border-border last:border-0">
                 <td className="px-4 py-2">
-                  {r.threadId ? `Percakapan ${r.threadId.slice(0, 8)} (judul pribadi)` : "—"}
+                  {r.threadId ? t("usage.detail.privateTitle", { id: r.threadId.slice(0, 8) }) : "—"}
                 </td>
                 <td className="px-4 py-2 text-right">
-                  {r.projectId ? (r.projectName ?? "(proyek dihapus)") : "Tanpa proyek"}
+                  {r.projectId ? (r.projectName ?? t("usage.projectDeleted")) : t("usage.noProject")}
                 </td>
                 <td className="px-4 py-2 text-right">{num(r.requests)}</td>
                 <td className="px-4 py-2 text-right">{num(r.totalTokens)}</td>
@@ -240,7 +261,7 @@ function UserDetail({ userId, period, onClose }: { userId: string; period: strin
           </Table>
         )}
       </Section>
-      <Section title="Model yang dipakai">
+      <Section title={t("usage.detail.models")}>
         <ModelTable rows={data.byModel} />
       </Section>
     </div>
@@ -248,6 +269,7 @@ function UserDetail({ userId, period, onClose }: { userId: string; period: strin
 }
 
 function BudgetManager() {
+  const t = useT();
   const queryClient = useQueryClient();
   const { data: budgets } = useQuery(orpc.usage.budgets.list.queryOptions());
   const { data: team } = useQuery(orpc.usage.team.queryOptions({ input: { projectId: null } }));
@@ -289,10 +311,11 @@ function BudgetManager() {
     });
   }
 
-  const label = (b: BudgetStatus) => members.find((m) => m.userId === b.userId)?.name ?? "Semua anggota";
+  const label = (b: BudgetStatus) =>
+    members.find((m) => m.userId === b.userId)?.name ?? t("usage.allMembersShort");
   return (
     <div className="space-y-6">
-      <Section title="Tetapkan batas bulanan">
+      <Section title={t("usage.setLimit")}>
         <form
           onSubmit={submit}
           className="grid gap-3 rounded-2xl border border-border bg-card p-5 sm:grid-cols-2 lg:grid-cols-5"
@@ -302,7 +325,7 @@ function BudgetManager() {
             onChange={(e) => setUserId(e.target.value)}
             className="h-10 rounded-lg border border-border bg-card px-3 text-sm"
           >
-            <option value="">Semua anggota (default)</option>
+            <option value="">{t("usage.allMembers")}</option>
             {members.map((m) => (
               <option key={m.userId} value={m.userId}>
                 {m.name}
@@ -314,7 +337,7 @@ function BudgetManager() {
             onChange={(e) => setProjectId(e.target.value)}
             className="h-10 rounded-lg border border-border bg-card px-3 text-sm"
           >
-            <option value="">Semua proyek</option>
+            <option value="">{t("usage.allProjects")}</option>
             {(projects ?? []).map((p) => (
               <option key={p.id} value={p.id}>
                 {p.name}
@@ -326,44 +349,51 @@ function BudgetManager() {
             onChange={(e) => setUnit(e.target.value as "tokens" | "idr")}
             className="h-10 rounded-lg border border-border bg-card px-3 text-sm"
           >
-            <option value="idr">Rupiah (IDR)</option>
-            <option value="tokens">Token</option>
+            <option value="idr">{t("usage.rupiah")} (IDR)</option>
+            <option value="tokens">{t("usage.tokens")}</option>
           </select>
           <Input
             inputMode="numeric"
-            placeholder={unit === "idr" ? "Batas, mis. 500000" : "Batas, mis. 2000000"}
+            placeholder={unit === "idr" ? t("usage.limitPlaceholderIdr") : t("usage.limitPlaceholderTokens")}
             value={limit}
             onChange={(e) => setLimit(e.target.value)}
             required
           />
           <Button type="submit" disabled={save.isPending || !limit}>
-            Simpan batas
+            {t("usage.saveLimit")}
           </Button>
           {save.error && (
             <p className="text-sm text-destructive sm:col-span-2 lg:col-span-5">{save.error.message}</p>
           )}
         </form>
-        <p className="text-xs text-muted-foreground">
-          Batas khusus anggota menggantikan default dengan proyek dan satuan yang sama. Pengecekan dilakukan
-          sebelum permintaan dimulai, jadi permintaan yang sedang berjalan bisa melewati batas sedikit.
-        </p>
+        <p className="text-xs text-muted-foreground">{t("usage.limitNote")}</p>
       </Section>
 
-      <Section title="Batas aktif">
+      <Section title={t("usage.activeLimits")}>
         {!budgets || budgets.length === 0 ? (
-          <Empty text="Belum ada batas. Pemakaian tidak dibatasi." />
+          <Empty text={t("usage.noLimits")} />
         ) : (
-          <Table head={["Berlaku untuk", "Proyek", "Satuan", "Batas", ""]}>
+          <Table
+            head={[
+              t("usage.col.appliesTo"),
+              t("usage.col.project"),
+              t("usage.col.unit"),
+              t("usage.col.limit"),
+              "",
+            ]}
+          >
             {budgets.map((b) => (
               <tr key={b.id} className="border-b border-border last:border-0">
                 <td className="px-4 py-2">{label(b)}</td>
-                <td className="px-4 py-2 text-right">{b.projectName ?? "Semua proyek"}</td>
-                <td className="px-4 py-2 text-right">{b.unit === "idr" ? "Rupiah" : "Token"}</td>
+                <td className="px-4 py-2 text-right">{b.projectName ?? t("usage.allProjects")}</td>
+                <td className="px-4 py-2 text-right">
+                  {b.unit === "idr" ? t("usage.rupiah") : t("usage.tokens")}
+                </td>
                 <td className="px-4 py-2 text-right">{unitValue(b.unit, b.limit)}</td>
                 <td className="px-4 py-2 text-right">
                   <button
                     type="button"
-                    aria-label="Hapus batas"
+                    aria-label={t("usage.deleteLimitAria")}
                     onClick={() => setDeleting(b)}
                     className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-destructive"
                   >
@@ -376,7 +406,7 @@ function BudgetManager() {
         )}
       </Section>
 
-      <Section title="Kurs USD → IDR">
+      <Section title={t("usage.rate")}>
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -384,7 +414,7 @@ function BudgetManager() {
           }}
           className="flex flex-wrap items-center gap-3 rounded-2xl border border-border bg-card p-5"
         >
-          <span className="text-sm">1 USD =</span>
+          <span className="text-sm">{t("usage.rateEquals")}</span>
           <Input
             className="w-36"
             inputMode="decimal"
@@ -392,13 +422,12 @@ function BudgetManager() {
             value={fx}
             onChange={(e) => setFx(e.target.value)}
           />
-          <span className="text-sm">Rupiah</span>
+          <span className="text-sm">{t("usage.rupiah")}</span>
           <Button type="submit" disabled={!fx || saveFx.isPending}>
-            Simpan kurs
+            {t("usage.saveRate")}
           </Button>
           <p className="w-full text-xs text-muted-foreground">
-            Saat ini {num(settings?.fxUsdIdr ?? 16000)}. Kurs berlaku untuk pemakaian berikutnya; biaya yang
-            sudah tercatat tidak berubah.
+            {t("usage.rateNow", { rate: num(settings?.fxUsdIdr ?? 16000) })}
           </p>
           {saveFx.error && <p className="w-full text-sm text-destructive">{saveFx.error.message}</p>}
         </form>
@@ -406,9 +435,8 @@ function BudgetManager() {
 
       <ConfirmDialog
         open={deleting !== null}
-        title="Hapus batas?"
-        description="Setelah dihapus, pemakaian tidak lagi dibatasi oleh aturan ini."
-        confirmLabel="Hapus"
+        title={t("usage.deleteLimitTitle")}
+        description={t("usage.deleteLimitBody")}
         busy={remove.isPending}
         onConfirm={() => deleting && remove.mutate({ id: deleting.id })}
         onCancel={() => setDeleting(null)}
@@ -418,6 +446,7 @@ function BudgetManager() {
 }
 
 function TeamUsage({ period }: { period: string }) {
+  const t = useT();
   const queryClient = useQueryClient();
   const [projectId, setProjectId] = useState("");
   const [detailUser, setDetailUser] = useState<string | null>(null);
@@ -434,17 +463,17 @@ function TeamUsage({ period }: { period: string }) {
       },
     }),
   );
-  if (!data) return <p className="text-sm text-muted-foreground">Memuat…</p>;
+  if (!data) return <p className="text-sm text-muted-foreground">{t("common.loading")}</p>;
   return (
     <div className="space-y-6">
       <div className="grid gap-3 sm:grid-cols-3">
-        <Stat label="Biaya tim" value={idr(data.totals.costIdr)} />
-        <Stat label="Token tim" value={num(data.totals.totalTokens)} />
-        <Stat label="Permintaan" value={num(data.totals.requests)} />
+        <Stat label={t("usage.teamCost")} value={idr(data.totals.costIdr)} />
+        <Stat label={t("usage.teamTokens")} value={num(data.totals.totalTokens)} />
+        <Stat label={t("usage.requests")} value={num(data.totals.requests)} />
       </div>
       <div className="flex items-center gap-2">
         <label htmlFor="usage-project" className="text-sm text-muted-foreground">
-          Lihat
+          {t("usage.view")}
         </label>
         <select
           id="usage-project"
@@ -452,15 +481,25 @@ function TeamUsage({ period }: { period: string }) {
           onChange={(e) => setProjectId(e.target.value)}
           className="h-9 rounded-lg border border-border bg-card px-3 text-sm"
         >
-          <option value="">Global (semua proyek)</option>
+          <option value="">{t("usage.viewGlobal")}</option>
           {(projects ?? []).map((p) => (
             <option key={p.id} value={p.id}>
-              Proyek {p.name}
+              {t("usage.projectBudget", { name: p.name })}
             </option>
           ))}
         </select>
       </div>
-      <Table head={["#  Anggota", "Permintaan", "Token", "Biaya", "Porsi", "Sisa kuota", ""]}>
+      <Table
+        head={[
+          t("usage.col.member"),
+          t("usage.col.requests"),
+          t("usage.col.tokens"),
+          t("usage.col.cost"),
+          t("usage.col.share"),
+          t("usage.col.remaining"),
+          "",
+        ]}
+      >
         {data.rows.map((r, i) => {
           const b = tightest(r.budgets);
           return (
@@ -481,13 +520,17 @@ function TeamUsage({ period }: { period: string }) {
               <td className="px-4 py-2 text-right">{idr(r.costIdr)}</td>
               <td className="px-4 py-2 text-right">{r.sharePercent}%</td>
               <td className={cn("px-4 py-2 text-right", b?.exceeded && "text-destructive")}>
-                {b ? (b.exceeded ? "Habis" : unitValue(b.unit, b.remaining)) : "Tanpa batas"}
+                {b
+                  ? b.exceeded
+                    ? t("usage.exhausted")
+                    : unitValue(b.unit, b.remaining)
+                  : t("usage.noLimit")}
               </td>
               <td className="px-4 py-2 text-right">
                 <button
                   type="button"
-                  aria-label={`Reset kuota ${r.name}`}
-                  title="Reset kuota"
+                  aria-label={t("usage.resetAria", { name: r.name })}
+                  title={t("usage.resetTitle")}
                   onClick={() => setResetting(r)}
                   className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
                 >
@@ -501,9 +544,12 @@ function TeamUsage({ period }: { period: string }) {
       {detailUser && <UserDetail userId={detailUser} period={period} onClose={() => setDetailUser(null)} />}
       <ConfirmDialog
         open={resetting !== null}
-        title="Reset kuota?"
-        description={`Kuota ${resetting?.name ?? ""} dihitung ulang dari nol${projectId ? " untuk proyek terpilih" : " untuk semua proyek"}. Riwayat pemakaian tetap tersimpan dan reset dicatat di log audit.`}
-        confirmLabel="Reset"
+        title={t("usage.resetConfirmTitle")}
+        description={t("usage.resetBody", {
+          name: resetting?.name ?? "",
+          scope: projectId ? t("usage.resetScopeProject") : t("usage.resetScopeAll"),
+        })}
+        confirmLabel={t("usage.reset")}
         busy={reset.isPending}
         onConfirm={() =>
           resetting && reset.mutate({ userId: resetting.userId, projectId: projectId || null })
@@ -517,16 +563,17 @@ function TeamUsage({ period }: { period: string }) {
 type Tab = "mine" | "team" | "budgets";
 
 export function UsagePage() {
+  const t = useT();
   const { data: me } = useQuery(orpc.me.queryOptions());
   const isAdmin = isOrgAdmin(me?.role) || me?.isSystemAdmin === true;
   const [tab, setTab] = useState<Tab>("mine");
   const [period, setPeriod] = useState(periodOf(new Date()));
   const tabs: Array<{ id: Tab; label: string; icon: typeof Users }> = [
-    { id: "mine", label: "Pemakaian saya", icon: BarChart3 },
+    { id: "mine", label: t("usage.tab.mine"), icon: BarChart3 },
     ...(isAdmin
       ? [
-          { id: "team" as const, label: "Tim", icon: Users },
-          { id: "budgets" as const, label: "Batas & kurs", icon: RotateCcw },
+          { id: "team" as const, label: t("usage.tab.team"), icon: Users },
+          { id: "budgets" as const, label: t("usage.tab.budgets"), icon: RotateCcw },
         ]
       : []),
   ];
@@ -535,10 +582,8 @@ export function UsagePage() {
       <div className="mx-auto max-w-5xl space-y-6">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h1 className="text-xl font-semibold">Pemakaian & biaya</h1>
-            <p className="text-sm text-muted-foreground">
-              Token dan biaya (Rupiah) per bulan, zona waktu WIB.
-            </p>
+            <h1 className="text-xl font-semibold">{t("usage.title")}</h1>
+            <p className="text-sm text-muted-foreground">{t("usage.subtitle")}</p>
           </div>
           {tab !== "budgets" && (
             <Input

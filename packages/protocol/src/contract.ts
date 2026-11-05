@@ -1,6 +1,9 @@
 import { eventIterator, oc } from "@orpc/contract";
 import { z } from "zod";
 import {
+  AdminModel,
+  AdminModelInput,
+  AdminModelPatch,
   AdminOrg,
   AdminOrgDetail,
   AdminUser,
@@ -10,12 +13,14 @@ import {
   Customization,
   CustomizationInput,
   CustomizationKind,
+  CustomizationPatch,
   Engine,
   EngineOption,
   FileContent,
   Me,
   Mode,
   OrbsEvent,
+  OrgModelRow,
   Period,
   Project,
   ProjectFileEntry,
@@ -63,6 +68,10 @@ export const contract = {
     create: oc
       .input(z.object({ name: z.string().trim().min(1).max(200), mode: Mode.default("code") }))
       .output(Project),
+    /** Renames a project (its creator or a company admin). */
+    rename: oc
+      .input(z.object({ projectId: z.string(), name: z.string().trim().min(1).max(200) }))
+      .output(z.object({ ok: z.literal(true) })),
     /** Uploads one batch of files (the client splits big folders into several batches). */
     uploadFiles: oc
       .input(
@@ -106,6 +115,9 @@ export const contract = {
             email: z.string().trim().email(),
             password: z.string().min(8).max(200),
             role: SystemRole.default("user"),
+            /** Put the new account straight into a company, with this company role. */
+            orgId: z.string().optional(),
+            orgRole: z.enum(["org.admin", "org.member"]).default("org.member"),
           }),
         )
         .output(z.object({ id: z.string() })),
@@ -128,6 +140,10 @@ export const contract = {
     },
     orgs: {
       list: oc.output(z.array(AdminOrg)),
+      /** Creates an empty company; the system admin does not become a member. */
+      create: oc
+        .input(z.object({ name: z.string().trim().min(1).max(200) }))
+        .output(z.object({ id: z.string() })),
       detail: oc.input(z.object({ orgId: z.string() })).output(AdminOrgDetail),
       rename: oc
         .input(z.object({ orgId: z.string(), name: z.string().trim().min(1).max(200) }))
@@ -156,11 +172,39 @@ export const contract = {
         .input(z.object({ orgId: z.string(), memberId: z.string() }))
         .output(z.object({ ok: z.literal(true) })),
     },
+    /** Model registry (system-wide) and which models each organization gets. */
+    models: {
+      list: oc.output(z.array(AdminModel)),
+      create: oc.input(AdminModelInput).output(z.object({ id: z.string() })),
+      update: oc
+        .input(z.object({ id: z.string(), patch: AdminModelPatch }))
+        .output(z.object({ ok: z.literal(true) })),
+      delete: oc.input(z.object({ id: z.string() })).output(z.object({ ok: z.literal(true) })),
+      /** Every registry model with this organization's assignment state. */
+      forOrg: oc.input(z.object({ orgId: z.string() })).output(z.array(OrgModelRow)),
+      /** `assigned` = appears for the organization; `enabled` = usable there. */
+      setForOrg: oc
+        .input(
+          z.object({
+            orgId: z.string(),
+            modelId: z.string(),
+            assigned: z.boolean(),
+            enabled: z.boolean().default(true),
+          }),
+        )
+        .output(z.object({ ok: z.literal(true) })),
+    },
     audit: {
       list: oc
         .input(z.object({ limit: z.number().int().min(1).max(500).default(100) }))
         .output(z.array(AuditEntry)),
     },
+  },
+  /** Pin or unpin a conversation or a project for the current user. */
+  pins: {
+    set: oc
+      .input(z.object({ kind: z.enum(["thread", "project"]), id: z.string(), pinned: z.boolean() }))
+      .output(z.object({ ok: z.literal(true) })),
   },
   /** Usage & budgets. `mine` is for everyone; the rest need an org owner/admin. */
   usage: {
@@ -195,7 +239,7 @@ export const contract = {
   customizations: {
     list: oc.input(z.object({ kind: CustomizationKind.optional() })).output(z.array(Customization)),
     create: oc.input(CustomizationInput).output(Customization),
-    update: oc.input(z.object({ id: z.string(), patch: CustomizationInput.partial() })).output(Customization),
+    update: oc.input(z.object({ id: z.string(), patch: CustomizationPatch })).output(Customization),
     delete: oc.input(z.object({ id: z.string() })).output(z.object({ deleted: z.literal(true) })),
   },
   events: {

@@ -1,5 +1,6 @@
 import { isSystemAdmin } from "@orbs/protocol";
 import { createRootRoute, createRoute, createRouter, Outlet, redirect } from "@tanstack/react-router";
+import { useT } from "./i18n/index.ts";
 import { authClient } from "./lib/auth.ts";
 import { AdminPage } from "./routes/AdminPage.tsx";
 import { AppShell } from "./routes/AppShell.tsx";
@@ -120,13 +121,13 @@ const routeTree = rootRoute.addChildren([
 ]);
 
 function RouteError({ error, reset }: { error: unknown; reset: () => void }) {
+  const t = useT();
   return (
     <div className="flex h-full items-center justify-center p-6">
       <div className="max-w-sm space-y-3 text-center">
-        <p className="font-medium">Tidak bisa memuat halaman</p>
+        <p className="font-medium">{t("error.title")}</p>
         <p className="text-sm text-muted-foreground">
-          {error instanceof Error ? error.message : "Server Orbs tidak bisa dihubungi."} Pastikan server
-          berjalan, lalu coba lagi.
+          {t("error.body", { reason: error instanceof Error ? error.message : t("error.unreachable") })}
         </p>
         <button
           type="button"
@@ -136,7 +137,7 @@ function RouteError({ error, reset }: { error: unknown; reset: () => void }) {
           }}
           className="rounded-lg bg-primary px-3 py-1.5 text-sm text-primary-foreground"
         >
-          Coba lagi
+          {t("common.tryAgain")}
         </button>
       </div>
     </div>

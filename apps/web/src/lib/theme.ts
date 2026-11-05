@@ -7,12 +7,12 @@ export interface ThemePreference {
   accent: Accent;
 }
 
-export const ACCENTS: Array<{ id: Accent; label: string; swatch: string }> = [
-  { id: "violet", label: "Violet", swatch: "#7c3aed" },
-  { id: "lagoon", label: "Laguna", swatch: "#0891b2" },
-  { id: "forest", label: "Hutan", swatch: "#16a34a" },
-  { id: "sunset", label: "Senja", swatch: "#ea580c" },
-];
+export const ACCENTS = [
+  { id: "violet", label: "accent.violet", swatch: "#7c3aed" },
+  { id: "lagoon", label: "accent.lagoon", swatch: "#0891b2" },
+  { id: "forest", label: "accent.forest", swatch: "#16a34a" },
+  { id: "sunset", label: "accent.sunset", swatch: "#ea580c" },
+] as const satisfies ReadonlyArray<{ id: Accent; label: string; swatch: string }>;
 
 const KEY = "orbs:theme";
 const listeners = new Set<() => void>();

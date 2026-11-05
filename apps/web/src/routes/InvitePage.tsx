@@ -4,6 +4,7 @@ import { MailCheck } from "lucide-react";
 import { useState } from "react";
 import { Orb } from "../components/Orb.tsx";
 import { Button } from "../components/ui/button.tsx";
+import { useT } from "../i18n/index.ts";
 import { authClient } from "../lib/auth.ts";
 import { AuthPage } from "./AuthPage.tsx";
 
@@ -12,6 +13,7 @@ import { AuthPage } from "./AuthPage.tsx";
  * admin (chat, email, ...); the server also checks that the signed-in email matches the invite.
  */
 export function InvitePage() {
+  const t = useT();
   const { invitationId } = useParams({ from: "/invite/$invitationId" });
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -31,8 +33,8 @@ export function InvitePage() {
       const code = (result.error as { code?: string } | null)?.code;
       setError(
         code === "YOU_ARE_NOT_THE_RECIPIENT_OF_THE_INVITATION"
-          ? `Undangan ini bukan untuk ${session?.user.email}. Keluar, lalu masuk dengan email yang diundang.`
-          : "Undangan tidak ditemukan, sudah dipakai, atau sudah kedaluwarsa. Minta tautan baru ke admin.",
+          ? t("invite.wrongRecipient", { email: session?.user.email ?? "" })
+          : t("invite.invalid"),
       );
       return;
     }
@@ -52,18 +54,16 @@ export function InvitePage() {
       <div className="w-full max-w-md space-y-4 rounded-2xl border border-border bg-card p-8 shadow-sm">
         <Orb />
         <h1 className="flex items-center gap-2 text-xl font-semibold">
-          <MailCheck className="size-5 text-primary" /> Kamu diundang
+          <MailCheck className="size-5 text-primary" /> {t("invite.title")}
         </h1>
-        <p className="text-sm text-muted-foreground">
-          Bergabung ke ruang kerja tim sebagai <b>{session.user.email}</b>.
-        </p>
+        <p className="text-sm text-muted-foreground">{t("invite.body", { email: session.user.email })}</p>
         {error && <p className="text-sm text-destructive">{error}</p>}
         <div className="flex gap-2">
           <Button onClick={accept} disabled={busy} className="flex-1">
-            Bergabung
+            {t("invite.join")}
           </Button>
           <Button variant="secondary" onClick={switchAccount}>
-            Ganti akun
+            {t("invite.switch")}
           </Button>
         </div>
       </div>

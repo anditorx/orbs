@@ -50,6 +50,27 @@
       "when": 1793897117648,
       "tag": "0006_role_names",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1793901185297,
+      "tag": "0007_user_pins",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1793901752415,
+      "tag": "0008_model_registry",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1793901761538,
+      "tag": "0009_drop_model_catalog",
+      "breakpoints": true
     }
   ]
 }

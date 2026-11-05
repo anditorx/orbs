@@ -3,10 +3,12 @@ import { type FormEvent, useState } from "react";
 import { Orb } from "../components/Orb.tsx";
 import { Button } from "../components/ui/button.tsx";
 import { Input } from "../components/ui/input.tsx";
+import { useT } from "../i18n/index.ts";
 import { authClient } from "../lib/auth.ts";
 
 /** Sign in / sign up. With `invitationId` the user arrived from an invite link (/invite/<id>). */
 export function AuthPage({ invitationId }: { invitationId?: string } = {}) {
+  const t = useT();
   const navigate = useNavigate();
   const [mode, setMode] = useState<"signin" | "signup">(invitationId ? "signup" : "signin");
   const [name, setName] = useState("");
@@ -26,7 +28,7 @@ export function AuthPage({ invitationId }: { invitationId?: string } = {}) {
         : await authClient.signIn.email({ email, password });
     setBusy(false);
     if (result.error) {
-      setError(result.error.message ?? "Gagal masuk. Periksa email dan kata sandi.");
+      setError(result.error.message ?? t("auth.failed"));
       return;
     }
     if (invitationId) {
@@ -48,25 +50,28 @@ export function AuthPage({ invitationId }: { invitationId?: string } = {}) {
           <div>
             <h1 className="text-lg font-semibold">Orbs</h1>
             <p className="text-sm text-muted-foreground">
-              {invitationId
-                ? "Daftar atau masuk dengan email yang diundang untuk bergabung."
-                : "Asisten kerja AI untuk tim kamu"}
+              {invitationId ? t("auth.taglineInvite") : t("auth.tagline")}
             </p>
           </div>
         </div>
         {mode === "signup" && (
-          <Input placeholder="Nama lengkap" value={name} onChange={(e) => setName(e.target.value)} required />
+          <Input
+            placeholder={t("auth.name")}
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            required
+          />
         )}
         <Input
           type="email"
-          placeholder="Email kantor"
+          placeholder={t("auth.email")}
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           required
         />
         <Input
           type="password"
-          placeholder="Kata sandi (min. 8 karakter)"
+          placeholder={t("auth.password")}
           minLength={8}
           value={password}
           onChange={(e) => setPassword(e.target.value)}
@@ -74,14 +79,14 @@ export function AuthPage({ invitationId }: { invitationId?: string } = {}) {
         />
         {error && <p className="text-sm text-destructive">{error}</p>}
         <Button type="submit" className="w-full" disabled={busy}>
-          {mode === "signup" ? "Daftar" : "Masuk"}
+          {mode === "signup" ? t("auth.signUp") : t("auth.signIn")}
         </Button>
         <button
           type="button"
           className="w-full text-center text-sm text-muted-foreground hover:text-foreground"
           onClick={() => setMode(mode === "signin" ? "signup" : "signin")}
         >
-          {mode === "signin" ? "Belum punya akun? Daftar" : "Sudah punya akun? Masuk"}
+          {mode === "signin" ? t("auth.noAccount") : t("auth.haveAccount")}
         </button>
       </form>
     </div>

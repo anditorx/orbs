@@ -167,16 +167,33 @@ password can be overridden with `POSTGRES_PASSWORD`; optional profiles start Min
 The first account on a new installation is always permitted, so an administrator can complete the
 initial setup.
 
+### Model management
+
+System administrators keep a **registry of AI models** (provider, model ID, prices, maximum data
+class) under **System Admin → Models**, with a global on/off switch per model. For each organization they
+then choose which models **appear** and which of those are **enabled**: a model that appears but is
+disabled is shown greyed out with the reason; a model that does not appear is not offered at all.
+A disabled model can't be chosen for a new conversation, even by an outdated client.
+
+### Languages
+
+The interface is available in **English** (default) and **Bahasa Indonesia**. Each person picks
+theirs in **Settings → Appearance → Language**; the choice is stored in the browser and also
+sent to the server, so error messages and engine descriptions follow it. UI strings live in
+`apps/web/src/i18n/messages/*.ts` (English and Indonesian side by side, checked by the compiler),
+server messages in `apps/server/src/i18n.ts`. To add a language, add its table next to the
+existing two in each of those files.
+
 ### Roles and privacy
 
-| Role                                      | Scope        | Can do                                                                                                                                                                                                                             |
-| ----------------------------------------- | ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **System administrator** (`system.admin`) | Installation | Everything except reading conversations: create, rename and delete companies; manage members and roles in any company; reset passwords, change emails, block or delete accounts; set budgets and org-wide skills; delete projects. |
-| **Company administrator** (`org.admin`)   | One company  | Invite and manage members, set monthly usage budgets, reset quotas, see usage per member and project.                                                                                                                              |
-| **User** (`org.member`)                   | One company  | Create projects and conversations, use their own skills and instructions, see their own usage and budgets.                                                                                                                         |
+| Role                                         | Scope            | Can do                                                                                                                                                                                                                                                                                                                       |
+| -------------------------------------------- | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **System administrator** (`system.admin`)    | Installation     | Everything except reading conversations: create, rename and delete organizations; create user accounts directly as `org.admin` or `org.member` of an organization; manage members and roles in any organization; reset passwords, change emails, block or delete accounts; set budgets and org-wide skills; delete projects. |
+| **Organization administrator** (`org.admin`) | One organization | Invite and manage members, set monthly usage budgets, reset quotas, see usage per member and project.                                                                                                                                                                                                                        |
+| **User** (`org.member`)                      | One organization | Create projects and conversations, use their own skills and instructions, see their own usage and budgets.                                                                                                                                                                                                                   |
 
 `system.admin` is stored on the account (`user.role`); `org.admin` and `org.member` are stored per
-company (`member.role`), so one person can administer one company and be an ordinary user in another.
+organization (`member.role`), so one person can administer one organization and be an ordinary user in another.
 Accounts without a system role keep the neutral value `user`. The names are defined once in
 `packages/protocol/src/roles.ts`.
 
@@ -185,11 +202,11 @@ Privacy rules (strict profile):
 - Conversations are private to their creator. **No role**, including system administrators, can read
   conversation titles or content; reports show usage **metadata** only (project, model, token counts).
 - System administrators have full control otherwise ("god mode"): they can enter and manage any
-  company without being a member, and may remove even a company's last administrator. Every one of
+  organization without being a member, and may remove even an organization's last administrator. Every one of
   these actions is written to the audit log.
-- Only system administrators can create companies; everyone else joins through an invitation.
-- Company administrators cannot remove or demote the last administrator of their own company.
-- Impersonation is disabled, and the raw account/company endpoints of the auth library are blocked at
+- Only system administrators can create organizations; everyone else joins through an invitation.
+- Organization administrators cannot remove or demote the last administrator of their own organization.
+- Impersonation is disabled, and the raw account/organization endpoints of the auth library are blocked at
   the HTTP layer: system administrators use Orbs' own audited admin API instead. Deleting an
   account keeps its usage history.
 - Resetting someone's password signs them out everywhere. Note that a new password lets the holder

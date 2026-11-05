@@ -4,6 +4,7 @@ import { type FormEvent, useState } from "react";
 import { Orb } from "../components/Orb.tsx";
 import { Button } from "../components/ui/button.tsx";
 import { Input } from "../components/ui/input.tsx";
+import { useT } from "../i18n/index.ts";
 import { authClient } from "../lib/auth.ts";
 
 function slugify(value: string) {
@@ -15,6 +16,7 @@ function slugify(value: string) {
 }
 
 export function OnboardingPage() {
+  const t = useT();
   const navigate = useNavigate();
   const { data: session, isPending } = authClient.useSession();
   // Companies are created by Orbs system administrators; everyone else joins by invitation.
@@ -31,7 +33,7 @@ export function OnboardingPage() {
     const created = await authClient.organization.create({ name, slug });
     if (created.error || !created.data) {
       setBusy(false);
-      setError(created.error?.message ?? "Gagal membuat organisasi.");
+      setError(created.error?.message ?? t("onboarding.createFailed"));
       return;
     }
     await authClient.organization.setActive({ organizationId: created.data.id });
@@ -45,11 +47,8 @@ export function OnboardingPage() {
       <div className="flex h-full flex-col items-center justify-center gap-4 bg-muted p-6">
         <div className="w-full max-w-md space-y-4 rounded-2xl border border-border bg-card p-8 shadow-sm">
           <Orb />
-          <h1 className="text-xl font-semibold">Belum bergabung ke ruang kerja</h1>
-          <p className="text-sm text-muted-foreground">
-            Akunmu belum terdaftar di perusahaan mana pun. Minta admin perusahaanmu mengirim{" "}
-            <b>tautan undangan</b>, lalu buka tautan itu.
-          </p>
+          <h1 className="text-xl font-semibold">{t("onboarding.noWorkspaceTitle")}</h1>
+          <p className="text-sm text-muted-foreground">{t("onboarding.noWorkspaceBody")}</p>
           <Button
             variant="secondary"
             className="w-full"
@@ -58,7 +57,7 @@ export function OnboardingPage() {
               await navigate({ to: "/login" });
             }}
           >
-            Keluar
+            {t("common.signOut")}
           </Button>
         </div>
       </div>
@@ -72,23 +71,20 @@ export function OnboardingPage() {
         className="w-full max-w-md space-y-4 rounded-2xl border border-border bg-card p-8 shadow-sm"
       >
         <Orb />
-        <h1 className="text-xl font-semibold">Buat ruang kerja tim</h1>
-        <p className="text-sm text-muted-foreground">
-          Ruang kerja menyimpan percakapan, plugin, dan koneksi tim kamu. Semua data tersimpan di server
-          perusahaanmu sendiri.
-        </p>
+        <h1 className="text-xl font-semibold">{t("onboarding.title")}</h1>
+        <p className="text-sm text-muted-foreground">{t("onboarding.body")}</p>
         <p className="rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground">
-          Diundang ke ruang kerja yang sudah ada? Buka <b>tautan undangan</b> dari admin timmu.
+          {t("onboarding.invited")}
         </p>
         <Input
-          placeholder="Nama perusahaan atau tim"
+          placeholder={t("onboarding.name")}
           value={name}
           onChange={(e) => setName(e.target.value)}
           required
         />
         {error && <p className="text-sm text-destructive">{error}</p>}
         <Button type="submit" className="w-full" disabled={busy || !name.trim()}>
-          Buat ruang kerja
+          {t("onboarding.create")}
         </Button>
       </form>
     </div>

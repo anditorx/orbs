@@ -14,6 +14,7 @@ import {
   Wand2,
 } from "lucide-react";
 import type { ReactNode } from "react";
+import { useT } from "../../i18n/index.ts";
 import { orpc } from "../../lib/rpc.ts";
 import { useTheme } from "../../lib/theme.ts";
 import { setUi, useUi } from "../../lib/uiState.ts";
@@ -51,6 +52,7 @@ const groupClass =
 
 /** ⌘K: jump to any conversation or project, or run a command. */
 export function CommandPalette({ isSystemAdmin }: { isSystemAdmin: boolean }) {
+  const t = useT();
   const open = useUi((s) => s.paletteOpen);
   const navigate = useNavigate();
   const { toggleDark } = useTheme();
@@ -74,48 +76,48 @@ export function CommandPalette({ isSystemAdmin }: { isSystemAdmin: boolean }) {
     <Command.Dialog
       open={open}
       onOpenChange={(value) => setUi({ paletteOpen: value })}
-      label="Palet perintah"
+      label={t("palette.label")}
       overlayClassName="fixed inset-0 z-40 bg-black/30"
       contentClassName="fixed top-[15%] left-1/2 z-50 w-[min(640px,92vw)] -translate-x-1/2 overflow-hidden rounded-2xl border border-border bg-card text-foreground shadow-2xl"
     >
       <Command.Input
-        placeholder="Cari percakapan, proyek, atau perintah…"
+        placeholder={t("palette.placeholder")}
         className="h-12 w-full border-b border-border bg-transparent px-4 text-sm outline-none"
       />
       <Command.List className="max-h-[60vh] overflow-y-auto p-1">
         <Command.Empty className="px-4 py-8 text-center text-sm text-muted-foreground">
-          Tidak ada yang cocok.
+          {t("palette.empty")}
         </Command.Empty>
-        <Command.Group heading="Aksi" className={groupClass}>
+        <Command.Group heading={t("palette.actions")} className={groupClass}>
           <Item
-            value="percakapan baru new chat"
+            value="percakapan baru new conversation new chat"
             icon={<MessageSquarePlus className="size-4" />}
             onSelect={run(() =>
-              createThread.mutate({ title: "Percakapan baru", mode: "work", engine: { kind: "auto" } }),
+              createThread.mutate({ title: t("sidebar.newChat"), mode: "work", engine: { kind: "auto" } }),
             )}
           >
-            Percakapan baru
+            {t("palette.newChat")}
           </Item>
           <Item
-            value="mode kerja work"
+            value="mode kerja work open work"
             icon={<Sparkles className="size-4" />}
             onSelect={run(() => navigate({ to: "/" }))}
           >
-            Buka mode Kerja
+            {t("palette.openWork")}
           </Item>
           <Item
-            value="mode kode code ide"
+            value="mode kode code ide open code"
             icon={<Code2 className="size-4" />}
             onSelect={run(() => navigate({ to: "/code", search: {} }))}
           >
-            Buka mode Kode
+            {t("palette.openCode")}
           </Item>
           <Item
             value="tema gelap terang dark light theme"
             icon={<Moon className="size-4" />}
             onSelect={run(toggleDark)}
           >
-            Ganti tema terang/gelap
+            {t("palette.toggleTheme")}
           </Item>
           <Item
             value="sidebar tampilkan sembunyikan"
@@ -123,21 +125,21 @@ export function CommandPalette({ isSystemAdmin }: { isSystemAdmin: boolean }) {
             hint={`${modKey}B`}
             onSelect={run(() => setUi((s) => ({ sidebarOpen: !s.sidebarOpen })))}
           >
-            Tampilkan/sembunyikan sidebar
+            {t("palette.toggleSidebar")}
           </Item>
           <Item
             value="kustomisasi skills mcp plugin instructions"
             icon={<Wand2 className="size-4" />}
             onSelect={run(() => navigate({ to: "/customize/$section", params: { section: "skills" } }))}
           >
-            Kustomisasi: skill, MCP, plugin
+            {t("palette.customize")}
           </Item>
           <Item
-            value="pengaturan settings"
+            value="pengaturan settings preferences language bahasa"
             icon={<SlidersHorizontal className="size-4" />}
             onSelect={run(() => navigate({ to: "/settings/$section", params: { section: "appearance" } }))}
           >
-            Pengaturan
+            {t("palette.settings")}
           </Item>
           {isSystemAdmin && (
             <Item
@@ -145,18 +147,18 @@ export function CommandPalette({ isSystemAdmin }: { isSystemAdmin: boolean }) {
               icon={<ShieldCheck className="size-4" />}
               onSelect={run(() => navigate({ to: "/admin" }))}
             >
-              Admin Sistem
+              {t("palette.systemAdmin")}
             </Item>
           )}
         </Command.Group>
         {projects.length > 0 && (
-          <Command.Group heading="Proyek" className={groupClass}>
+          <Command.Group heading={t("palette.projects")} className={groupClass}>
             {projects.map((p) => (
               <Item
                 key={p.id}
                 value={`proyek ${p.name} ${p.id}`}
                 icon={<FolderClosed className="size-4" />}
-                hint={p.mode === "code" ? "Kode" : "Kerja"}
+                hint={p.mode === "code" ? t("shell.code") : t("shell.work")}
                 onSelect={run(() =>
                   p.mode === "code"
                     ? navigate({ to: "/code", search: { project: p.id } })
@@ -169,15 +171,15 @@ export function CommandPalette({ isSystemAdmin }: { isSystemAdmin: boolean }) {
           </Command.Group>
         )}
         {threads.length > 0 && (
-          <Command.Group heading="Percakapan" className={groupClass}>
-            {threads.map((t) => (
+          <Command.Group heading={t("palette.conversations")} className={groupClass}>
+            {threads.map((th) => (
               <Item
-                key={t.id}
-                value={`percakapan ${t.title} ${t.id}`}
+                key={th.id}
+                value={`percakapan conversation ${th.title} ${th.id}`}
                 icon={<MessageSquare className="size-4" />}
-                onSelect={run(() => navigate({ to: "/t/$threadId", params: { threadId: t.id } }))}
+                onSelect={run(() => navigate({ to: "/t/$threadId", params: { threadId: th.id } }))}
               >
-                {t.title}
+                {th.title}
               </Item>
             ))}
           </Command.Group>

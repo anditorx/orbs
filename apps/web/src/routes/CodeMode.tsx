@@ -5,6 +5,7 @@ import { type DragEvent, useEffect, useMemo, useRef, useState } from "react";
 import { FileTree } from "../components/FileTree.tsx";
 import { Button } from "../components/ui/button.tsx";
 import { ConfirmDialog } from "../components/ui/confirm-dialog.tsx";
+import { type MessageKey, t as tNow, useT } from "../i18n/index.ts";
 import {
   fromDataTransfer,
   fromFileList,
@@ -23,22 +24,23 @@ function formatBytes(bytes: number) {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
-const reasonLabel: Record<string, string> = {
-  "ignored-directory": "folder dependensi/build",
-  "secret-or-system-file": "file rahasia/sistem (mis. .env)",
-  "invalid-path": "nama/path tidak valid",
-  "too-large": "terlalu besar",
-  "project-quota": "melebihi kuota proyek",
+const reasonKey: Record<string, MessageKey> = {
+  "ignored-directory": "code.skip.ignored-directory",
+  "secret-or-system-file": "code.skip.secret-or-system-file",
+  "invalid-path": "code.skip.invalid-path",
+  "too-large": "code.skip.too-large",
+  "project-quota": "code.skip.project-quota",
 };
 
 function FileViewer({ projectId, path }: { projectId: string; path: string }) {
+  const t = useT();
   const { data, isLoading } = useQuery(orpc.projects.readFile.queryOptions({ input: { projectId, path } }));
-  if (isLoading) return <p className="p-6 text-sm text-muted-foreground">Memuat…</p>;
+  if (isLoading) return <p className="p-6 text-sm text-muted-foreground">{t("common.loading")}</p>;
   if (!data) return null;
   if (data.binary) {
     return (
       <p className="p-6 text-sm text-muted-foreground">
-        File biner ({formatBytes(data.size)}) — tidak bisa ditampilkan.
+        {t("code.binary", { size: formatBytes(data.size) })}
       </p>
     );
   }
@@ -47,7 +49,7 @@ function FileViewer({ projectId, path }: { projectId: string; path: string }) {
     <div className="min-h-0 flex-1 overflow-auto">
       {data.truncated && (
         <p className="border-b border-border bg-muted px-4 py-1 text-xs text-muted-foreground">
-          File besar ({formatBytes(data.size)}) — hanya 1 MB pertama yang ditampilkan.
+          {t("code.truncated", { size: formatBytes(data.size) })}
         </p>
       )}
       <pre className="font-mono text-[13px] leading-5">
@@ -66,6 +68,7 @@ function FileViewer({ projectId, path }: { projectId: string; path: string }) {
 }
 
 export function CodeMode() {
+  const t = useT();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const search = useSearch({ from: "/app/code" });
@@ -107,7 +110,7 @@ export function CodeMode() {
   async function upload(folder: PickedFolder) {
     setReport(null);
     if (folder.files.length === 0) {
-      setReport("Tidak ada file yang bisa diunggah dari folder ini.");
+      setReport(t("code.noFiles"));
       return;
     }
     try {
@@ -117,18 +120,31 @@ export function CodeMode() {
           : (await rpc.projects.create({ name: folder.rootName, mode: "code" })).id;
       const result = await uploadToProject(destination, folder.files, setProgress);
       const skippedTotal = folder.skipped + result.skipped.length;
-      const reasons = [...new Set(result.skipped.map((s) => reasonLabel[s.reason] ?? s.reason))];
+      const reasons = [
+        ...new Set(
+          result.skipped.map((s) =>
+            reasonKey[s.reason] ? tNow(reasonKey[s.reason] as MessageKey) : s.reason,
+          ),
+        ),
+      ];
       setReport(
-        `${result.saved} file diunggah` +
+        `${t("code.uploaded", { count: result.saved })}` +
           (skippedTotal > 0
-            ? `, ${skippedTotal} dilewati (${reasons.length ? reasons.join(", ") : "node_modules, .git, .env, build"})`
+            ? t("code.skipped", {
+                count: skippedTotal,
+                reasons: reasons.length ? reasons.join(", ") : t("code.skipDefault"),
+              })
             : "") +
           ".",
       );
       await queryClient.invalidateQueries({ queryKey: orpc.projects.key() });
       await select({ project: destination });
     } catch (error) {
-      setReport(`Gagal mengunggah: ${error instanceof Error ? error.message : "kesalahan tidak dikenal"}`);
+      setReport(
+        t("code.uploadFailed", {
+          reason: error instanceof Error ? error.message : t("code.unknownError"),
+        }),
+      );
     } finally {
       setProgress(null);
     }
@@ -139,7 +155,7 @@ export function CodeMode() {
     setDragging(false);
     const folder = await fromDataTransfer(e.dataTransfer.items);
     if (folder) await upload(folder);
-    else setReport("Seret sebuah folder (bukan file satuan).");
+    else setReport(t("code.dropFolder"));
   }
 
   const pick = (where: "new" | "current") => {
@@ -174,7 +190,7 @@ export function CodeMode() {
             onChange={(e) => select({ project: e.target.value || undefined })}
             className="h-9 w-full rounded-lg border border-border bg-card px-2 text-sm"
           >
-            {projects.length === 0 && <option value="">Belum ada proyek</option>}
+            {projects.length === 0 && <option value="">{t("code.noProjects")}</option>}
             {projects.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.name}
@@ -182,7 +198,7 @@ export function CodeMode() {
             ))}
           </select>
           <Button className="w-full" onClick={() => pick("new")} disabled={progress !== null}>
-            <FolderUp className="size-4" /> Unggah folder proyek
+            <FolderUp className="size-4" /> {t("code.uploadFolder")}
           </Button>
           {project && (
             <div className="flex gap-1">
@@ -192,12 +208,12 @@ export function CodeMode() {
                 onClick={() => pick("current")}
                 disabled={progress !== null}
               >
-                <Upload className="size-3.5" /> Tambah ke proyek ini
+                <Upload className="size-3.5" /> {t("code.addToProject")}
               </Button>
               <Button
                 variant="secondary"
                 className="h-8 px-2 text-xs text-destructive"
-                aria-label="Hapus proyek"
+                aria-label={t("code.deleteAria")}
                 onClick={() => setConfirmDelete(true)}
               >
                 <Trash2 className="size-3.5" />
@@ -213,7 +229,8 @@ export function CodeMode() {
                 />
               </div>
               <p className="flex items-center gap-1 text-xs text-muted-foreground">
-                <Loader2 className="size-3 animate-spin" /> Mengunggah {progress.done}/{progress.total} file…
+                <Loader2 className="size-3 animate-spin" />{" "}
+                {t("code.uploading", { done: progress.done, total: progress.total })}
               </p>
             </div>
           )}
@@ -223,7 +240,7 @@ export function CodeMode() {
           {project ? (
             <>
               <p className="px-2 pb-1 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
-                {project.fileCount} file · {formatBytes(project.totalBytes)}
+                {t("code.fileSummary", { count: project.fileCount, size: formatBytes(project.totalBytes) })}
               </p>
               <FileTree
                 entries={files}
@@ -233,8 +250,7 @@ export function CodeMode() {
             </>
           ) : (
             <div className="rounded-xl border border-dashed border-border p-4 text-center text-xs text-muted-foreground">
-              Seret folder proyek ke sini, atau klik <b>Unggah folder proyek</b>. Folder seperti{" "}
-              <code>node_modules</code>, <code>.git</code> dan file <code>.env</code> otomatis dilewati.
+              {t("code.dropHint")}
             </div>
           )}
         </div>
@@ -243,12 +259,12 @@ export function CodeMode() {
       <section className="flex min-h-0 min-w-0 flex-col">
         <header className="flex h-10 items-center border-b border-border px-4 text-sm">
           <FileCode className="mr-2 size-4 text-muted-foreground" />
-          <span className="min-w-0 flex-1 truncate">{search.file ?? "Pilih file untuk dilihat"}</span>
+          <span className="min-w-0 flex-1 truncate">{search.file ?? t("code.pickFile")}</span>
           <button
             type="button"
             onClick={() => setUi((s) => ({ terminalOpen: !s.terminalOpen }))}
-            title={`Terminal (${modKey}J)`}
-            aria-label="Terminal"
+            title={t("code.terminalTitle", { key: modKey })}
+            aria-label={t("code.terminal")}
             className={cn(
               "rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground",
               terminalOpen && "bg-muted text-foreground",
@@ -261,25 +277,22 @@ export function CodeMode() {
           <FileViewer projectId={projectId} path={search.file} />
         ) : (
           <div className="flex flex-1 items-center justify-center p-6 text-center text-sm text-muted-foreground">
-            Editor, diff dan terminal hadir di Fase 5. Saat ini kamu bisa mengunggah dan menelusuri file
-            proyek.
+            {t("code.comingSoon")}
           </div>
         )}
       </section>
 
       <aside className="border-l border-border p-4">
         <p className="flex items-center gap-2 text-xs font-semibold text-muted-foreground">
-          <Bot className="size-4" /> AGENT CODING
+          <Bot className="size-4" /> {t("code.agent")}
         </p>
-        <p className="mt-3 text-sm text-muted-foreground">
-          Di Fase 5 agent bisa membaca proyek ini, mengusulkan perubahan, dan menjalankan test di sandbox.
-        </p>
+        <p className="mt-3 text-sm text-muted-foreground">{t("code.agentBody")}</p>
       </aside>
 
       <ConfirmDialog
         open={confirmDelete}
-        title="Hapus proyek?"
-        description={`Proyek "${project?.name ?? ""}" dan semua file yang diunggah akan dihapus permanen dari server.`}
+        title={t("code.deleteTitle")}
+        description={t("code.deleteBody", { name: project?.name ?? "" })}
         busy={deleteProject.isPending}
         onCancel={() => setConfirmDelete(false)}
         onConfirm={() =>

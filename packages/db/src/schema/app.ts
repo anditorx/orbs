@@ -135,31 +135,6 @@ export const auditLog = pgTable(
   (t) => [index("audit_org_created_idx").on(t.orgId, t.createdAt)],
 );
 
-/**
- * Admin-managed model catalog read by the Auto router. `maxDataClass` is the most
- * sensitive data classification this model may receive.
- */
-export const modelCatalog = pgTable(
-  "model_catalog",
-  {
-    id: id(),
-    orgId: orgId(),
-    provider: text("provider").notNull(),
-    modelId: text("model_id").notNull(),
-    displayName: text("display_name").notNull(),
-    inputUsdPerMtok: numeric("input_usd_per_mtok", { precision: 12, scale: 6 }),
-    outputUsdPerMtok: numeric("output_usd_per_mtok", { precision: 12, scale: 6 }),
-    qualityScore: real("quality_score"),
-    maxDataClass: text("max_data_class", { enum: ["public", "internal", "confidential"] })
-      .notNull()
-      .default("internal"),
-    enabled: boolean("enabled").notNull().default(true),
-    createdAt: createdAt(),
-    updatedAt: updatedAt(),
-  },
-  (t) => [uniqueIndex("model_catalog_org_model_uq").on(t.orgId, t.provider, t.modelId)],
-);
-
 /** Free-form per-organization settings (feature flags, policies, defaults). */
 export const orgSettings = pgTable("org_settings", {
   orgId: text("org_id")
@@ -269,4 +244,67 @@ export const customization = pgTable(
     updatedAt: updatedAt(),
   },
   (t) => [index("customization_org_kind_idx").on(t.orgId, t.kind)],
+);
+
+/**
+ * A user's pinned conversations and projects. Pins are personal (projects are shared, so a project
+ * pin only changes the order for the person who pinned it). `targetId` has no FK: it points at a
+ * thread or a project depending on `kind`, and stale pins are removed when the target is deleted.
+ */
+export const userPin = pgTable(
+  "user_pin",
+  {
+    id: id(),
+    orgId: orgId(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    kind: text("kind", { enum: ["thread", "project"] }).notNull(),
+    targetId: text("target_id").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("user_pin_uq").on(t.userId, t.kind, t.targetId)],
+);
+
+/**
+ * System-wide registry of AI models, managed by Orbs system administrators. `active` is a global
+ * switch: an inactive model is unusable in every organization.
+ */
+export const aiModel = pgTable(
+  "ai_model",
+  {
+    id: id(),
+    provider: text("provider").notNull(),
+    modelId: text("model_id").notNull(),
+    displayName: text("display_name").notNull(),
+    inputUsdPerMtok: numeric("input_usd_per_mtok", { precision: 12, scale: 6 }),
+    outputUsdPerMtok: numeric("output_usd_per_mtok", { precision: 12, scale: 6 }),
+    qualityScore: real("quality_score"),
+    /** The most sensitive data classification this model may receive. */
+    maxDataClass: text("max_data_class", { enum: ["public", "internal", "confidential"] })
+      .notNull()
+      .default("internal"),
+    active: boolean("active").notNull().default(true),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [uniqueIndex("ai_model_provider_model_uq").on(t.provider, t.modelId)],
+);
+
+/**
+ * Which registry models an organization sees. A row means the model APPEARS for that organization;
+ * `enabled` says whether it can be used there. No row means the model is not offered at all.
+ */
+export const orgModel = pgTable(
+  "org_model",
+  {
+    id: id(),
+    orgId: orgId(),
+    modelRefId: text("model_ref_id")
+      .notNull()
+      .references(() => aiModel.id, { onDelete: "cascade" }),
+    enabled: boolean("enabled").notNull().default(true),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("org_model_uq").on(t.orgId, t.modelRefId)],
 );
