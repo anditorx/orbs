@@ -1,3 +1,4 @@
+import { isSystemAdmin } from "@orbs/protocol";
 import { useNavigate } from "@tanstack/react-router";
 import { type FormEvent, useState } from "react";
 import { Orb } from "../components/Orb.tsx";
@@ -15,6 +16,9 @@ function slugify(value: string) {
 
 export function OnboardingPage() {
   const navigate = useNavigate();
+  const { data: session, isPending } = authClient.useSession();
+  // Companies are created by Orbs system administrators; everyone else joins by invitation.
+  const canCreate = isSystemAdmin((session?.user as { role?: string | null } | undefined)?.role);
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -33,6 +37,32 @@ export function OnboardingPage() {
     await authClient.organization.setActive({ organizationId: created.data.id });
     setBusy(false);
     await navigate({ to: "/" });
+  }
+
+  if (isPending) return null;
+  if (!canCreate) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-4 bg-muted p-6">
+        <div className="w-full max-w-md space-y-4 rounded-2xl border border-border bg-card p-8 shadow-sm">
+          <Orb />
+          <h1 className="text-xl font-semibold">Belum bergabung ke ruang kerja</h1>
+          <p className="text-sm text-muted-foreground">
+            Akunmu belum terdaftar di perusahaan mana pun. Minta admin perusahaanmu mengirim{" "}
+            <b>tautan undangan</b>, lalu buka tautan itu.
+          </p>
+          <Button
+            variant="secondary"
+            className="w-full"
+            onClick={async () => {
+              await authClient.signOut();
+              await navigate({ to: "/login" });
+            }}
+          >
+            Keluar
+          </Button>
+        </div>
+      </div>
+    );
   }
 
   return (

@@ -53,7 +53,7 @@ on infrastructure they control.
 
 | Area                      | Capabilities                                                                                                                                          |
 | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Accounts & workspaces** | Email/password sign-in, multiple workspaces (organizations) per user, workspace switcher, member roles (owner, admin, member)                         |
+| **Accounts & workspaces** | Email/password sign-in, multiple workspaces (organizations) per user, workspace switcher, member roles (`org.admin`, `org.member`)                    |
 | **Invitations**           | Shareable invitation links that work without an email server; configurable sign-up policy (`open`, `invite-only`, `domain`)                           |
 | **Conversations**         | Create, rename and delete conversations; group them into projects; real-time updates across browser tabs and users                                    |
 | **Code mode**             | Upload a project folder (drag-and-drop or picker), browse the file tree and view files; dependency folders and secret files are skipped automatically |
@@ -166,6 +166,37 @@ password can be overridden with `POSTGRES_PASSWORD`; optional profiles start Min
 
 The first account on a new installation is always permitted, so an administrator can complete the
 initial setup.
+
+### Roles and privacy
+
+| Role                                      | Scope        | Can do                                                                                                                                                                                                                             |
+| ----------------------------------------- | ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **System administrator** (`system.admin`) | Installation | Everything except reading conversations: create, rename and delete companies; manage members and roles in any company; reset passwords, change emails, block or delete accounts; set budgets and org-wide skills; delete projects. |
+| **Company administrator** (`org.admin`)   | One company  | Invite and manage members, set monthly usage budgets, reset quotas, see usage per member and project.                                                                                                                              |
+| **User** (`org.member`)                   | One company  | Create projects and conversations, use their own skills and instructions, see their own usage and budgets.                                                                                                                         |
+
+`system.admin` is stored on the account (`user.role`); `org.admin` and `org.member` are stored per
+company (`member.role`), so one person can administer one company and be an ordinary user in another.
+Accounts without a system role keep the neutral value `user`. The names are defined once in
+`packages/protocol/src/roles.ts`.
+
+Privacy rules (strict profile):
+
+- Conversations are private to their creator. **No role**, including system administrators, can read
+  conversation titles or content; reports show usage **metadata** only (project, model, token counts).
+- System administrators have full control otherwise ("god mode"): they can enter and manage any
+  company without being a member, and may remove even a company's last administrator. Every one of
+  these actions is written to the audit log.
+- Only system administrators can create companies; everyone else joins through an invitation.
+- Company administrators cannot remove or demote the last administrator of their own company.
+- Impersonation is disabled, and the raw account/company endpoints of the auth library are blocked at
+  the HTTP layer: system administrators use Orbs' own audited admin API instead. Deleting an
+  account keeps its usage history.
+- Resetting someone's password signs them out everywhere. Note that a new password lets the holder
+  sign in as that person, so treat this action as sensitive.
+
+Anyone with direct database access can still read the database; role rules protect the application,
+not the host.
 
 ### Inviting members
 

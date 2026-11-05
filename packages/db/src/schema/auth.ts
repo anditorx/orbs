@@ -18,7 +18,7 @@ export const user = pgTable("user", {
   image: text("image"),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
-  // Admin plugin: system-wide role ("admin" = Orbs system administrator) and account bans.
+  // Admin plugin: system-wide role ("system.admin" = Orbs system administrator) and account bans.
   role: text("role").default("user"),
   banned: boolean("banned").default(false),
   banReason: text("ban_reason"),
@@ -95,7 +95,7 @@ export const member = pgTable(
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
-    role: text("role").notNull().default("member"),
+    role: text("role").notNull().default("org.member"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
   },
   (t) => [index("member_org_idx").on(t.organizationId), index("member_user_idx").on(t.userId)],

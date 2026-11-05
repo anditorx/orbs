@@ -196,6 +196,9 @@ importers:
       '@orbs/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@orbs/plugin-sdk':
+        specifier: workspace:*
+        version: link:../../packages/plugin-sdk
       '@orbs/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol

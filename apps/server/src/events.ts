@@ -97,3 +97,42 @@ class EventBus {
 }
 
 export const eventBus = new EventBus();
+
+/**
+ * Conversations are private to their creator. Thread-stream events (messages, titles) are visible
+ * only to the thread's owner; org-stream events about a thread carry `ownerId` and follow the same
+ * rule. Everything else on the org stream (e.g. new projects) is shared with all members.
+ * Returns a per-connection checker with a small owner cache.
+ */
+export function createEventVisibility(orgId: string, userId: string) {
+  const owners = new Map<string, string | null>();
+  async function ownerOf(threadId: string) {
+    if (owners.has(threadId)) return owners.get(threadId) ?? null;
+    const [row] = await db
+      .select({ createdBy: schema.thread.createdBy })
+      .from(schema.thread)
+      .where(and(eq(schema.thread.id, threadId), eq(schema.thread.orgId, orgId)))
+      .limit(1);
+    if (row) owners.set(threadId, row.createdBy);
+    return row?.createdBy ?? null;
+  }
+  return async (event: Pick<OrbsEvent, "streamType" | "streamId" | "payload">): Promise<boolean> => {
+    if (event.streamType === "thread") return (await ownerOf(event.streamId)) === userId;
+    const ownerId = event.payload.ownerId;
+    return typeof ownerId === "string" ? ownerId === userId : true;
+  };
+}
+
+/** Like `listEvents`, but only returns what `userId` is allowed to read. */
+export async function listVisibleEvents(
+  orgId: string,
+  userId: string,
+  streamType: string,
+  streamId: string,
+  afterSeq: number,
+) {
+  const visible = createEventVisibility(orgId, userId);
+  const events = await listEvents(orgId, streamType, streamId, afterSeq);
+  const checks = await Promise.all(events.map((e) => visible(e)));
+  return events.filter((_, i) => checks[i]);
+}

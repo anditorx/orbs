@@ -1,3 +1,4 @@
+import { isSystemAdmin } from "@orbs/protocol";
 import { createRootRoute, createRoute, createRouter, Outlet, redirect } from "@tanstack/react-router";
 import { authClient } from "./lib/auth.ts";
 import { AdminPage } from "./routes/AdminPage.tsx";
@@ -9,6 +10,7 @@ import { InvitePage } from "./routes/InvitePage.tsx";
 import { OnboardingPage } from "./routes/OnboardingPage.tsx";
 import { SETTINGS_SECTIONS, SettingsPage } from "./routes/SettingsPage.tsx";
 import { ThreadView } from "./routes/ThreadView.tsx";
+import { UsagePage } from "./routes/UsagePage.tsx";
 import { WorkHome } from "./routes/WorkHome.tsx";
 
 async function currentSession() {
@@ -47,7 +49,7 @@ const adminRoute = createRoute({
   beforeLoad: async () => {
     const session = await currentSession();
     if (!session) throw redirect({ to: "/login" });
-    if ((session.user as { role?: string | null }).role !== "admin") throw redirect({ to: "/" });
+    if (!isSystemAdmin((session.user as { role?: string | null }).role)) throw redirect({ to: "/" });
   },
   component: AdminPage,
 });
@@ -96,6 +98,8 @@ const settingsRoute = createRoute({
   component: SettingsPage,
 });
 
+const usageRoute = createRoute({ getParentRoute: () => appRoute, path: "/usage", component: UsagePage });
+
 const customizeRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/customize/$section",
@@ -112,7 +116,7 @@ const routeTree = rootRoute.addChildren([
   onboardingRoute,
   inviteRoute,
   adminRoute,
-  appRoute.addChildren([homeRoute, threadRoute, codeRoute, settingsRoute, customizeRoute]),
+  appRoute.addChildren([homeRoute, threadRoute, codeRoute, settingsRoute, customizeRoute, usageRoute]),
 ]);
 
 function RouteError({ error, reset }: { error: unknown; reset: () => void }) {

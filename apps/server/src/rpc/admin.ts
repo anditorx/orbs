@@ -1,5 +1,5 @@
 import { schema } from "@orbs/db";
-import type { AdminOrg, AdminUser, AuditEntry } from "@orbs/protocol";
+import { type AdminOrg, type AdminUser, type AuditEntry, isSystemAdmin, SYSTEM_ROLE } from "@orbs/protocol";
 import { ORPCError } from "@orpc/server";
 import { and, count, desc, eq, ilike, ne, or, sql } from "drizzle-orm";
 import { audit } from "../audit.ts";
@@ -7,6 +7,8 @@ import { auth } from "../auth.ts";
 import { db } from "../db.ts";
 import { env } from "../env.ts";
 import { parseDomains } from "../signupPolicy.ts";
+import { resolvePeriod } from "../usage.ts";
+import { adminOrgManagement, adminUserManagement } from "./adminManage.ts";
 import { systemAdmin } from "./base.ts";
 
 /** Better-Auth admin endpoints throw APIError; surface their message to the admin UI. */
@@ -25,8 +27,8 @@ async function countAdmins(excludeUserId?: string) {
     .from(schema.user)
     .where(
       excludeUserId
-        ? and(eq(schema.user.role, "admin"), ne(schema.user.id, excludeUserId))
-        : eq(schema.user.role, "admin"),
+        ? and(eq(schema.user.role, SYSTEM_ROLE.admin), ne(schema.user.id, excludeUserId))
+        : eq(schema.user.role, SYSTEM_ROLE.admin),
     );
   return row?.n ?? 0;
 }
@@ -35,7 +37,7 @@ export const adminRouter = {
   overview: systemAdmin.admin.overview.handler(async () => {
     const [[users], [admins], [banned], [orgs], [threads]] = await Promise.all([
       db.select({ n: count() }).from(schema.user),
-      db.select({ n: count() }).from(schema.user).where(eq(schema.user.role, "admin")),
+      db.select({ n: count() }).from(schema.user).where(eq(schema.user.role, SYSTEM_ROLE.admin)),
       db.select({ n: count() }).from(schema.user).where(eq(schema.user.banned, true)),
       db.select({ n: count() }).from(schema.organization),
       db.select({ n: count() }).from(schema.thread),
@@ -52,6 +54,7 @@ export const adminRouter = {
   }),
 
   users: {
+    ...adminUserManagement,
     list: systemAdmin.admin.users.list.handler(async ({ input }) => {
       const term = input.search ? `%${input.search}%` : undefined;
       const rows = await db
@@ -75,7 +78,7 @@ export const adminRouter = {
           id: r.id,
           name: r.name,
           email: r.email,
-          role: r.role === "admin" ? "admin" : "user",
+          role: isSystemAdmin(r.role) ? SYSTEM_ROLE.admin : SYSTEM_ROLE.user,
           banned: Boolean(r.banned),
           banReason: r.banReason,
           createdAt: r.createdAt.toISOString(),
@@ -102,7 +105,7 @@ export const adminRouter = {
     }),
 
     setRole: systemAdmin.admin.users.setRole.handler(async ({ context, input }) => {
-      if (input.role !== "admin") {
+      if (input.role !== SYSTEM_ROLE.admin) {
         if (input.userId === context.user.id) {
           throw new ORPCError("BAD_REQUEST", {
             message: "Kamu tidak bisa mencabut peran admin dirimu sendiri.",
@@ -154,7 +157,11 @@ export const adminRouter = {
   },
 
   orgs: {
+    ...adminOrgManagement,
     list: systemAdmin.admin.orgs.list.handler(async () => {
+      const month = resolvePeriod(undefined);
+      const monthStart = month.start.toISOString();
+      const monthEnd = month.end.toISOString();
       const rows = await db
         .select({
           id: schema.organization.id,
@@ -163,6 +170,8 @@ export const adminRouter = {
           createdAt: schema.organization.createdAt,
           memberCount: sql<number>`(select count(*)::int from "member" m where m.organization_id = "organization"."id")`,
           threadCount: sql<number>`(select count(*)::int from "thread" t where t.org_id = "organization"."id")`,
+          monthTokens: sql<number>`(select coalesce(sum(l.input_tokens + l.output_tokens), 0)::float8 from "usage_ledger" l where l.org_id = "organization"."id" and l.created_at >= ${monthStart}::timestamptz and l.created_at < ${monthEnd}::timestamptz)`,
+          monthCostIdr: sql<number>`(select coalesce(sum(l.cost_idr), 0)::float8 from "usage_ledger" l where l.org_id = "organization"."id" and l.created_at >= ${monthStart}::timestamptz and l.created_at < ${monthEnd}::timestamptz)`,
         })
         .from(schema.organization)
         .orderBy(desc(schema.organization.createdAt))

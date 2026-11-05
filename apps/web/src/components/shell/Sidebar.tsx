@@ -2,6 +2,7 @@ import type { Project, Thread } from "@orbs/protocol";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
+  BarChart3,
   ChevronDown,
   ChevronRight,
   FolderClosed,
@@ -271,6 +272,9 @@ export function Sidebar({ isSystemAdmin }: { isSystemAdmin: boolean }) {
       <div className="space-y-0.5 border-t border-border px-3 py-2">
         <Link to="/customize/$section" params={{ section: "skills" }} className={footerLink}>
           <Wand2 className="size-4" /> Kustomisasi
+        </Link>
+        <Link to="/usage" className={footerLink}>
+          <BarChart3 className="size-4" /> Pemakaian
         </Link>
         <Link to="/settings/$section" params={{ section: "appearance" }} className={footerLink}>
           <SlidersHorizontal className="size-4" /> Pengaturan
