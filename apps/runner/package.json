@@ -1,0 +1,14 @@
+{
+  "name": "@orbs/runner",
+  "version": "0.0.0",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@orbs/protocol": "workspace:*"
+  }
+}

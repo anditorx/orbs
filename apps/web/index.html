@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Orbs</title>
+    <script>
+      // Apply the saved theme before the app renders to avoid a flash of the wrong colors.
+      try {
+        const saved = JSON.parse(localStorage.getItem("orbs:theme") || "{}");
+        const mode = saved.mode || "system";
+        const dark = mode === "dark" || (mode === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
+        document.documentElement.classList.toggle("dark", dark);
+        if (saved.accent && saved.accent !== "violet") document.documentElement.dataset.accent = saved.accent;
+      } catch {
+        // Unreadable preference: the app applies defaults after it loads.
+      }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

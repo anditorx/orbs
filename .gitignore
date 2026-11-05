@@ -1,0 +1,138 @@
+# =============================================================================
+# Orbs — files that must never reach the public repository.
+# Rule of thumb: commit source, schema/migrations, lockfile and *example* config;
+# never commit secrets, user data, build output, local tooling or private notes.
+# =============================================================================
+
+# --- Secrets & credentials -----------------------------------------------------
+# Real environment files (auth secret, database URL, API keys). Only the template is public.
+.env
+.env.*
+!.env.example
+# Private keys, certificates and keystores (TLS, code signing, SSH).
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+*.jks
+*.keystore
+*.mobileprovision
+id_rsa*
+id_ed25519*
+# Registry/cloud credentials that may hold tokens.
+.npmrc
+.yarnrc.yml
+.netrc
+.aws/
+.gcloud/
+credentials.json
+service-account*.json
+# Local dev accounts / anything explicitly marked secret or local.
+*.secret
+*.secret.*
+*.local
+*.local.*
+!*.local.example
+
+# --- Private documentation -----------------------------------------------------
+# Planning notes, research and business documents stay on the maintainer's machine.
+/docs/
+/notes/
+/research/
+
+# --- User & runtime data ---------------------------------------------------------
+# Uploaded project files (Code mode workspaces) and any local storage.
+/.data/
+/data/
+/uploads/
+/storage/
+# Database files, dumps and backups.
+*.sqlite
+*.sqlite3
+*.db
+*.db-journal
+*.dump
+*.sql.gz
+*.bak
+/backups/
+# Local overrides of infrastructure (may contain host paths or passwords).
+docker-compose.override.yml
+compose.override.yml
+
+# --- Dependencies ------------------------------------------------------------------
+node_modules/
+.pnpm-store/
+.yarn/
+bower_components/
+
+# --- Build output & caches ---------------------------------------------------------
+dist/
+build/
+out/
+release/
+.output/
+.vite/
+.turbo/
+.cache/
+.parcel-cache/
+.eslintcache
+.biome-cache/
+*.tsbuildinfo
+# Electron packaging output (desktop builds, installers).
+*.dmg
+*.pkg
+*.exe
+*.msi
+*.AppImage
+*.deb
+*.rpm
+*.snap
+*.blockmap
+
+# --- Tests & coverage ---------------------------------------------------------------
+coverage/
+.nyc_output/
+test-results/
+playwright-report/
+blob-report/
+*.lcov
+
+# --- Logs & temporary files -----------------------------------------------------------
+*.log
+logs/
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+tmp/
+temp/
+*.tmp
+*.swp
+*.swo
+*~
+
+# --- Operating system files ------------------------------------------------------------
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# --- Editors, IDEs & AI assistants (personal, machine-specific settings) ----------------
+.idea/
+.vscode/
+*.code-workspace
+.fleet/
+.zed/
+.claude/
+CLAUDE.local.md
+.cursor/
+.codex/
+.windsurf/
+.continue/
+.aider*

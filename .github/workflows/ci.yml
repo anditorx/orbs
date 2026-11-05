@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: orbs
+          POSTGRES_PASSWORD: orbs
+          POSTGRES_DB: orbs
+        ports: ["54329:5432"]
+        options: >-
+          --health-cmd "pg_isready -U orbs -d orbs" --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      DATABASE_URL: postgres://orbs:orbs@127.0.0.1:54329/orbs
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+      - name: Apply migrations to a fresh database
+        run: pnpm --filter @orbs/db exec tsx src/migrate.ts
+      - run: pnpm --filter @orbs/web build

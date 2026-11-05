@@ -1,0 +1,27 @@
+{
+  "name": "@orbs/server",
+  "version": "0.0.0",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch --env-file=../../.env src/index.ts",
+    "start": "tsx --env-file=../../.env src/index.ts",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run --passWithNoTests",
+    "admin:promote": "tsx --env-file=../../.env src/cli/set-system-role.ts promote",
+    "admin:demote": "tsx --env-file=../../.env src/cli/set-system-role.ts demote"
+  },
+  "dependencies": {
+    "@hono/node-server": "^2.1.6",
+    "@orbs/db": "workspace:*",
+    "@orbs/protocol": "workspace:*",
+    "@orpc/contract": "^1.16.1",
+    "@orpc/server": "^1.16.1",
+    "better-auth": "^1.7.16",
+    "drizzle-orm": "^0.45.4",
+    "hono": "^4.13.16",
+    "postgres": "^4.0.0",
+    "zod": "^4.6.7"
+  }
+}

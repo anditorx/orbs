@@ -1,0 +1,106 @@
+@import "tailwindcss";
+
+/* Dark mode is class-based so users can override the OS setting. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+ * Orbs design tokens. Components only use semantic names (background, card, primary, ...),
+ * so themes and accents are pure token swaps.
+ */
+:root {
+  --background: oklch(0.99 0.003 285);
+  --foreground: oklch(0.22 0.02 285);
+  --muted: oklch(0.965 0.006 285);
+  --muted-foreground: oklch(0.52 0.02 285);
+  --card: oklch(1 0 0);
+  --border: oklch(0.91 0.008 285);
+  --sidebar: oklch(0.975 0.005 285);
+  --primary: oklch(0.55 0.2 285);
+  --primary-foreground: oklch(0.99 0 0);
+  --accent: oklch(0.95 0.03 285);
+  --destructive: oklch(0.58 0.22 27);
+  --orb-from: #c4b5fd;
+  --orb-via: #7c3aed;
+  --orb-to: #312e81;
+  color-scheme: light;
+}
+
+.dark {
+  --background: oklch(0.17 0.012 285);
+  --foreground: oklch(0.95 0.008 285);
+  --muted: oklch(0.23 0.014 285);
+  --muted-foreground: oklch(0.7 0.015 285);
+  --card: oklch(0.21 0.013 285);
+  --border: oklch(0.3 0.014 285);
+  --sidebar: oklch(0.15 0.012 285);
+  --primary: oklch(0.68 0.17 285);
+  --primary-foreground: oklch(0.15 0.02 285);
+  --accent: oklch(0.3 0.06 285);
+  --destructive: oklch(0.66 0.2 25);
+  color-scheme: dark;
+}
+
+/* Accent palettes (Orbs originals). */
+[data-accent="lagoon"] {
+  --primary: oklch(0.58 0.12 210);
+  --accent: oklch(0.95 0.03 210);
+  --orb-from: #a5f3fc;
+  --orb-via: #0891b2;
+  --orb-to: #164e63;
+}
+[data-accent="forest"] {
+  --primary: oklch(0.56 0.13 155);
+  --accent: oklch(0.95 0.035 155);
+  --orb-from: #bbf7d0;
+  --orb-via: #16a34a;
+  --orb-to: #14532d;
+}
+[data-accent="sunset"] {
+  --primary: oklch(0.64 0.17 45);
+  --accent: oklch(0.95 0.035 45);
+  --orb-from: #fed7aa;
+  --orb-via: #ea580c;
+  --orb-to: #7c2d12;
+}
+.dark[data-accent="lagoon"] {
+  --primary: oklch(0.72 0.12 210);
+  --accent: oklch(0.3 0.05 210);
+}
+.dark[data-accent="forest"] {
+  --primary: oklch(0.72 0.14 155);
+  --accent: oklch(0.3 0.05 155);
+}
+.dark[data-accent="sunset"] {
+  --primary: oklch(0.74 0.15 50);
+  --accent: oklch(0.32 0.06 45);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-card: var(--card);
+  --color-border: var(--border);
+  --color-sidebar: var(--sidebar);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-accent: var(--accent);
+  --color-destructive: var(--destructive);
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+  }
+  * {
+    @apply border-border;
+  }
+}
