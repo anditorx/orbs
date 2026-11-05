@@ -35,13 +35,14 @@ service-account*.json
 *.local
 *.local.*
 !*.local.example
-!sprintupdate.md
 
 # --- Private documentation -----------------------------------------------------
 # Planning notes, research and business documents stay on the maintainer's machine.
 /docs/
 /notes/
 /research/
+# Sprint planning notes: local only, never pushed.
+/sprintupdate.md
 
 # --- User & runtime data ---------------------------------------------------------
 # Uploaded project files (Code mode workspaces) and any local storage.
