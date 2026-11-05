@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useSearch } from "@tanstack/react-router";
-import { Bot, FileCode, FolderUp, Loader2, SquareTerminal, Trash2, Upload, X } from "lucide-react";
+import { Bot, FileCode, FolderUp, Loader2, SquareTerminal, Trash2, Upload } from "lucide-react";
 import { type DragEvent, useEffect, useMemo, useRef, useState } from "react";
 import { FileTree } from "../components/FileTree.tsx";
 import { Button } from "../components/ui/button.tsx";

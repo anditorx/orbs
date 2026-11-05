@@ -183,9 +183,9 @@ function Workspace() {
       setMessage(result.error.message ?? "Gagal mengundang");
       return;
     }
-    setMessage(
-      `Undangan untuk ${email} dibuat. Minta dia mendaftar/masuk dengan email itu, lalu terima undangannya.`,
-    );
+    // Show the shareable link right away; the admin sends it through any channel.
+    setMessage(null);
+    setLastInvite(result.data ? { id: result.data.id, email } : null);
     setEmail("");
     await refetch();
   }
