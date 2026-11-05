@@ -1,13 +1,24 @@
 import { schema } from "@orbs/db";
-import type { Engine, EngineOption, OrbsEvent, Thread } from "@orbs/protocol";
+import {
+  type Engine,
+  type EngineOption,
+  isOrgAdmin,
+  isSystemAdmin,
+  ORG_ROLE,
+  type OrbsEvent,
+  type Thread,
+} from "@orbs/protocol";
 import { ORPCError } from "@orpc/server";
 import { and, desc, eq } from "drizzle-orm";
 import { audit } from "../audit.ts";
 import { db } from "../db.ts";
-import { appendEvent, eventBus, listEvents } from "../events.ts";
+import { appendEvent, createEventVisibility, eventBus, listVisibleEvents } from "../events.ts";
+import { assertWithinBudget } from "../usage.ts";
 import { adminRouter } from "./admin.ts";
 import { authed, inOrg, os } from "./base.ts";
+import { customizationsRouter } from "./customizations.ts";
 import { projectsRouter } from "./projects.ts";
+import { usageRouter } from "./usage.ts";
 
 function toThread(row: typeof schema.thread.$inferSelect): Thread {
   return {
@@ -34,25 +45,38 @@ export const router = os.router({
   me: authed.me.handler(async ({ context }) => {
     const orgId = context.session.activeOrganizationId ?? null;
     let role: string | null = null;
+    let activeOrgName: string | null = null;
     if (orgId) {
+      const [org] = await db
+        .select({ name: schema.organization.name })
+        .from(schema.organization)
+        .where(eq(schema.organization.id, orgId))
+        .limit(1);
+      activeOrgName = org?.name ?? null;
       const [membership] = await db
         .select({ role: schema.member.role })
         .from(schema.member)
         .where(and(eq(schema.member.organizationId, orgId), eq(schema.member.userId, context.user.id)))
         .limit(1);
-      role = membership?.role ?? null;
+      // A system admin who entered a company without joining it acts as its administrator.
+      role = membership?.role ?? (org && isSystemAdmin(context.user.role) ? ORG_ROLE.admin : null);
     }
     return {
       user: { id: context.user.id, name: context.user.name, email: context.user.email },
       activeOrgId: orgId,
       role,
-      isSystemAdmin: context.user.role === "admin",
+      isSystemAdmin: isSystemAdmin(context.user.role),
+      activeOrgName,
     };
   }),
 
   admin: adminRouter,
 
   projects: projectsRouter,
+
+  usage: usageRouter,
+
+  customizations: customizationsRouter,
 
   engines: {
     list: inOrg.engines.list.handler(async ({ context }) => {
@@ -95,7 +119,8 @@ export const router = os.router({
       const rows = await db
         .select()
         .from(schema.thread)
-        .where(eq(schema.thread.orgId, context.orgId))
+        // Conversations are private: members only ever see their own.
+        .where(and(eq(schema.thread.orgId, context.orgId), eq(schema.thread.createdBy, context.user.id)))
         .orderBy(desc(schema.thread.updatedAt))
         .limit(input.limit);
       return rows.map(toThread);
@@ -139,11 +164,31 @@ export const router = os.router({
     }),
 
     postMessage: inOrg.threads.postMessage.handler(async ({ context, input }) => {
+      const [thread] = await db
+        .select({ projectId: schema.thread.projectId })
+        .from(schema.thread)
+        .where(
+          and(
+            eq(schema.thread.id, input.threadId),
+            eq(schema.thread.orgId, context.orgId),
+            eq(schema.thread.createdBy, context.user.id),
+          ),
+        )
+        .limit(1);
+      if (!thread) throw new ORPCError("NOT_FOUND", { message: "Thread not found" });
+      // Refuse new work once a monthly budget (global or for this project) is used up.
+      await assertWithinBudget(context.orgId, context.user.id, thread.projectId);
       return db.transaction(async (tx) => {
         const [row] = await tx
           .update(schema.thread)
           .set({ updatedAt: new Date() })
-          .where(and(eq(schema.thread.id, input.threadId), eq(schema.thread.orgId, context.orgId)))
+          .where(
+            and(
+              eq(schema.thread.id, input.threadId),
+              eq(schema.thread.orgId, context.orgId),
+              eq(schema.thread.createdBy, context.user.id),
+            ),
+          )
           .returning({ id: schema.thread.id });
         if (!row) throw new ORPCError("NOT_FOUND", { message: "Thread not found" });
         const event = await appendEvent(
@@ -166,7 +211,13 @@ export const router = os.router({
         const [row] = await tx
           .update(schema.thread)
           .set({ title: input.title })
-          .where(and(eq(schema.thread.id, input.threadId), eq(schema.thread.orgId, context.orgId)))
+          .where(
+            and(
+              eq(schema.thread.id, input.threadId),
+              eq(schema.thread.orgId, context.orgId),
+              eq(schema.thread.createdBy, context.user.id),
+            ),
+          )
           .returning();
         if (!row) throw new ORPCError("NOT_FOUND", { message: "Percakapan tidak ditemukan" });
         await appendEvent(
@@ -175,7 +226,7 @@ export const router = os.router({
             streamType: "org",
             streamId: context.orgId,
             type: "thread.renamed",
-            payload: { threadId: row.id, title: row.title },
+            payload: { threadId: row.id, title: row.title, ownerId: context.user.id },
             actorId: context.user.id,
           },
           tx,
@@ -192,8 +243,7 @@ export const router = os.router({
           .where(and(eq(schema.thread.id, input.threadId), eq(schema.thread.orgId, context.orgId)))
           .limit(1);
         if (!row) throw new ORPCError("NOT_FOUND", { message: "Percakapan tidak ditemukan" });
-        const isOrgAdmin = context.role === "owner" || context.role === "admin";
-        if (row.createdBy !== context.user.id && !isOrgAdmin) {
+        if (row.createdBy !== context.user.id && !isOrgAdmin(context.role)) {
           throw new ORPCError("FORBIDDEN", {
             message: "Hanya pembuat atau admin yang bisa menghapus percakapan ini",
           });
@@ -216,7 +266,7 @@ export const router = os.router({
             streamType: "org",
             streamId: context.orgId,
             type: "thread.deleted",
-            payload: { threadId: row.id },
+            payload: { threadId: row.id, ownerId: row.createdBy },
             actorId: context.user.id,
           },
           tx,
@@ -238,11 +288,12 @@ export const router = os.router({
 
   events: {
     list: inOrg.events.list.handler(({ context, input }) =>
-      listEvents(context.orgId, input.streamType, input.streamId, input.afterSeq),
+      listVisibleEvents(context.orgId, context.user.id, input.streamType, input.streamId, input.afterSeq),
     ),
 
     subscribe: inOrg.events.subscribe.handler(async function* ({ context, input, signal }) {
       const queue: OrbsEvent[] = [];
+      const visible = createEventVisibility(context.orgId, context.user.id);
       let wake: (() => void) | undefined;
       const unsubscribe = eventBus.subscribe((event) => {
         if (event.orgId !== context.orgId) return;
@@ -259,7 +310,7 @@ export const router = os.router({
         while (!signal?.aborted) {
           const next = queue.shift();
           if (next) {
-            yield next;
+            if (await visible(next)) yield next;
             continue;
           }
           await new Promise<void>((resolve) => {

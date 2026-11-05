@@ -1,5 +1,5 @@
 import { schema } from "@orbs/db";
-import { normalizeRelativePath, type Project, skipReason } from "@orbs/protocol";
+import { isOrgAdmin, normalizeRelativePath, type Project, skipReason } from "@orbs/protocol";
 import { ORPCError } from "@orpc/server";
 import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { audit } from "../audit.ts";
@@ -212,8 +212,7 @@ export const projectsRouter = {
       .where(and(eq(schema.project.id, input.projectId), eq(schema.project.orgId, context.orgId)))
       .limit(1);
     if (!row) throw new ORPCError("NOT_FOUND", { message: "Proyek tidak ditemukan" });
-    const isOrgAdmin = context.role === "owner" || context.role === "admin";
-    if (row.createdBy !== context.user.id && !isOrgAdmin) {
+    if (row.createdBy !== context.user.id && !isOrgAdmin(context.role)) {
       throw new ORPCError("FORBIDDEN", {
         message: "Hanya pembuat atau admin yang bisa menghapus proyek ini",
       });

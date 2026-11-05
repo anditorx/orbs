@@ -6,6 +6,7 @@ import {
   bigserial,
   boolean,
   index,
+  integer,
   jsonb,
   numeric,
   pgTable,
@@ -167,3 +168,105 @@ export const orgSettings = pgTable("org_settings", {
   data: jsonb("data").notNull().default(sql`'{}'::jsonb`),
   updatedAt: updatedAt(),
 });
+
+/**
+ * Append-only record of model usage, one row per model call. It is deliberately NOT derived
+ * from the event stream: deleting a thread removes its events, but cost history must survive.
+ * `userId`/`projectId`/`threadId` are plain text (no FK) so deleting them never erases the cost trail.
+ * Cost is frozen at write time (`costMicroUsd` + the `fxRate` used) so later price or
+ * exchange-rate changes never rewrite history.
+ */
+export const usageLedger = pgTable(
+  "usage_ledger",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    orgId: orgId(),
+    // Plain text, no FK: removing an account must never erase its cost history.
+    userId: text("user_id").notNull(),
+    projectId: text("project_id"),
+    threadId: text("thread_id"),
+    provider: text("provider").notNull(),
+    modelId: text("model_id").notNull(),
+    inputTokens: bigint("input_tokens", { mode: "number" }).notNull().default(0),
+    cachedInputTokens: bigint("cached_input_tokens", { mode: "number" }).notNull().default(0),
+    outputTokens: bigint("output_tokens", { mode: "number" }).notNull().default(0),
+    reasoningTokens: bigint("reasoning_tokens", { mode: "number" }).notNull().default(0),
+    /** Cost in millionths of a US dollar (integer math, no float drift). */
+    costMicroUsd: bigint("cost_micro_usd", { mode: "number" }).notNull().default(0),
+    /** IDR per USD used when this row was written. */
+    fxRate: numeric("fx_rate", { precision: 14, scale: 4 }).notNull(),
+    costIdr: bigint("cost_idr", { mode: "number" }).notNull().default(0),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index("usage_org_user_created_idx").on(t.orgId, t.userId, t.createdAt),
+    index("usage_org_project_created_idx").on(t.orgId, t.projectId, t.createdAt),
+  ],
+);
+
+/**
+ * "Reset" of a user's quota. Non-destructive: usage rows stay in the ledger, but only rows
+ * created after the latest applicable reset count toward budgets. `projectId` null = all projects.
+ */
+export const usageReset = pgTable(
+  "usage_reset",
+  {
+    id: id(),
+    orgId: orgId(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    projectId: text("project_id"),
+    resetBy: text("reset_by").references(() => user.id, { onDelete: "set null" }),
+    reason: text("reason"),
+    resetAt: timestamp("reset_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("usage_reset_lookup_idx").on(t.orgId, t.userId, t.resetAt)],
+);
+
+/**
+ * Monthly spending cap. `userId` null = default for every member; `projectId` null = across all
+ * projects. A user-specific budget overrides the org default with the same project and unit.
+ */
+export const budget = pgTable(
+  "budget",
+  {
+    id: id(),
+    orgId: orgId(),
+    userId: text("user_id").references(() => user.id, { onDelete: "cascade" }),
+    projectId: text("project_id").references(() => project.id, { onDelete: "cascade" }),
+    unit: text("unit", { enum: ["tokens", "idr"] }).notNull(),
+    limitValue: bigint("limit_value", { mode: "number" }).notNull(),
+    createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("budget_org_idx").on(t.orgId)],
+);
+
+/**
+ * User-authored instructions, skills (SKILL.md body) and plugins (manifest JSON body).
+ * `scope` "user" is private to `ownerId`; "org" is shared with the whole workspace (admins only).
+ * `projectId` null = applies everywhere; otherwise only inside that project.
+ */
+export const customization = pgTable(
+  "customization",
+  {
+    id: id(),
+    orgId: orgId(),
+    ownerId: text("owner_id").references(() => user.id, { onDelete: "set null" }),
+    kind: text("kind", { enum: ["instruction", "skill", "plugin"] }).notNull(),
+    scope: text("scope", { enum: ["user", "org"] })
+      .notNull()
+      .default("user"),
+    projectId: text("project_id").references(() => project.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    description: text("description").notNull().default(""),
+    body: text("body").notNull().default(""),
+    enabled: boolean("enabled").notNull().default(true),
+    version: integer("version").notNull().default(1),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("customization_org_kind_idx").on(t.orgId, t.kind)],
+);

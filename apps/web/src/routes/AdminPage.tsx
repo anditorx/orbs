@@ -1,12 +1,21 @@
-import type { AdminUser } from "@orbs/protocol";
+import {
+  type AdminUser,
+  isSystemAdmin,
+  ORG_ROLE,
+  ORG_ROLE_LABEL,
+  type OrgRoleName,
+  SYSTEM_ROLE,
+  type SystemRole,
+} from "@orbs/protocol";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
-import { ArrowLeft, Building2, ScrollText, ShieldCheck, UserPlus, Users } from "lucide-react";
+import { Link, useNavigate } from "@tanstack/react-router";
+import { ArrowLeft, Building2, ScrollText, ShieldCheck, Trash2, UserPlus, Users } from "lucide-react";
 import { type FormEvent, useState } from "react";
 import { Orb } from "../components/Orb.tsx";
 import { Button } from "../components/ui/button.tsx";
 import { ConfirmDialog } from "../components/ui/confirm-dialog.tsx";
 import { Input } from "../components/ui/input.tsx";
+import { PromptDialog } from "../components/ui/prompt-dialog.tsx";
 import { orpc } from "../lib/rpc.ts";
 import { cn } from "../lib/utils.ts";
 
@@ -69,7 +78,7 @@ function CreateUserForm({ onDone }: { onDone: () => void }) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [role, setRole] = useState<"user" | "admin">("user");
+  const [role, setRole] = useState<SystemRole>(SYSTEM_ROLE.user);
   const create = useMutation(
     orpc.admin.users.create.mutationOptions({
       onSuccess: async () => {
@@ -107,11 +116,11 @@ function CreateUserForm({ onDone }: { onDone: () => void }) {
       />
       <select
         value={role}
-        onChange={(e) => setRole(e.target.value as "user" | "admin")}
+        onChange={(e) => setRole(e.target.value as SystemRole)}
         className="h-10 rounded-lg border border-border bg-card px-3 text-sm"
       >
         <option value="user">Pengguna biasa</option>
-        <option value="admin">Administrator sistem</option>
+        <option value={SYSTEM_ROLE.admin}>Administrator sistem</option>
       </select>
       {create.error && <p className="text-sm text-destructive sm:col-span-2">{create.error.message}</p>}
       <div className="flex justify-end gap-2 sm:col-span-2">
@@ -155,6 +164,8 @@ function UsersTab() {
   const [search, setSearch] = useState("");
   const [creating, setCreating] = useState(false);
   const [pending, setPending] = useState<PendingAction | null>(null);
+  const [editing, setEditing] = useState<{ kind: "password" | "email"; user: AdminUser } | null>(null);
+  const [deleting, setDeleting] = useState<AdminUser | null>(null);
   const [error, setError] = useState<string | null>(null);
   const { data: me } = useQuery(orpc.me.queryOptions());
   const { data: users = [] } = useQuery(
@@ -165,6 +176,9 @@ function UsersTab() {
   const ban = useMutation(orpc.admin.users.ban.mutationOptions(options));
   const unban = useMutation(orpc.admin.users.unban.mutationOptions(options));
   const setRole = useMutation(orpc.admin.users.setRole.mutationOptions(options));
+  const setPassword = useMutation(orpc.admin.users.setPassword.mutationOptions(options));
+  const setEmail = useMutation(orpc.admin.users.setEmail.mutationOptions(options));
+  const remove = useMutation(orpc.admin.users.delete.mutationOptions(options));
   const busy = ban.isPending || unban.isPending || setRole.isPending;
 
   function confirm() {
@@ -174,8 +188,8 @@ function UsersTab() {
     const done = { onSettled: () => setPending(null) };
     if (pending.kind === "ban") ban.mutate({ userId }, done);
     if (pending.kind === "unban") unban.mutate({ userId }, done);
-    if (pending.kind === "make-admin") setRole.mutate({ userId, role: "admin" }, done);
-    if (pending.kind === "remove-admin") setRole.mutate({ userId, role: "user" }, done);
+    if (pending.kind === "make-admin") setRole.mutate({ userId, role: SYSTEM_ROLE.admin }, done);
+    if (pending.kind === "remove-admin") setRole.mutate({ userId, role: SYSTEM_ROLE.user }, done);
   }
 
   return (
@@ -220,10 +234,10 @@ function UsersTab() {
                     <span
                       className={cn(
                         "rounded-full px-2 py-0.5 text-xs",
-                        u.role === "admin" ? "bg-accent text-primary" : "bg-muted text-muted-foreground",
+                        isSystemAdmin(u.role) ? "bg-accent text-primary" : "bg-muted text-muted-foreground",
                       )}
                     >
-                      {u.role === "admin" ? "Admin sistem" : "Pengguna"}
+                      {isSystemAdmin(u.role) ? "Admin sistem" : "Pengguna"}
                     </span>
                   </td>
                   <td className="px-4 py-3">
@@ -238,10 +252,27 @@ function UsersTab() {
                           variant="ghost"
                           className="h-8 text-xs"
                           onClick={() =>
-                            setPending({ kind: u.role === "admin" ? "remove-admin" : "make-admin", user: u })
+                            setPending({
+                              kind: isSystemAdmin(u.role) ? "remove-admin" : "make-admin",
+                              user: u,
+                            })
                           }
                         >
-                          {u.role === "admin" ? "Cabut admin" : "Jadikan admin"}
+                          {isSystemAdmin(u.role) ? "Cabut admin" : "Jadikan admin"}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          className="h-8 text-xs"
+                          onClick={() => setEditing({ kind: "password", user: u })}
+                        >
+                          Password
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          className="h-8 text-xs"
+                          onClick={() => setEditing({ kind: "email", user: u })}
+                        >
+                          Email
                         </Button>
                         <Button
                           variant="ghost"
@@ -249,6 +280,13 @@ function UsersTab() {
                           onClick={() => setPending({ kind: u.banned ? "unban" : "ban", user: u })}
                         >
                           {u.banned ? "Buka blokir" : "Blokir"}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          className="h-8 text-xs text-destructive"
+                          onClick={() => setDeleting(u)}
+                        >
+                          Hapus
                         </Button>
                       </div>
                     )}
@@ -259,6 +297,37 @@ function UsersTab() {
           </tbody>
         </table>
       </div>
+      <PromptDialog
+        open={editing !== null}
+        title={
+          editing?.kind === "password"
+            ? `Password baru untuk ${editing.user.name}`
+            : `Email baru untuk ${editing?.user.name ?? ""}`
+        }
+        label={editing?.kind === "password" ? "Password baru (min. 8 karakter)" : "Email baru"}
+        inputType={editing?.kind === "password" ? "password" : "email"}
+        confirmLabel="Simpan"
+        onCancel={() => setEditing(null)}
+        onSubmit={(value) => {
+          if (!editing) return;
+          setError(null);
+          const done = { onSettled: () => setEditing(null) };
+          if (editing.kind === "password")
+            setPassword.mutate({ userId: editing.user.id, password: value }, done);
+          else setEmail.mutate({ userId: editing.user.id, email: value }, done);
+        }}
+      />
+      <ConfirmDialog
+        open={deleting !== null}
+        title="Hapus akun?"
+        description={`${deleting?.name ?? ""} (${deleting?.email ?? ""}) dihapus permanen. Riwayat biaya tetap tersimpan. Untuk menonaktifkan sementara, gunakan Blokir.`}
+        confirmLabel="Hapus akun"
+        busy={remove.isPending}
+        onCancel={() => setDeleting(null)}
+        onConfirm={() =>
+          deleting && remove.mutate({ userId: deleting.id }, { onSettled: () => setDeleting(null) })
+        }
+      />
       <ConfirmDialog
         open={pending !== null}
         title={pending ? actionCopy[pending.kind].title : ""}
@@ -272,33 +341,254 @@ function UsersTab() {
   );
 }
 
+function inviteUrl(id: string) {
+  return `${window.location.origin}/invite/${id}`;
+}
+
+function OrgManager({ orgId, onClose }: { orgId: string; onClose: () => void }) {
+  const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  const { data: org } = useQuery(orpc.admin.orgs.detail.queryOptions({ input: { orgId } }));
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [role, setRole] = useState<OrgRoleName>(ORG_ROLE.member);
+  const [error, setError] = useState<string | null>(null);
+  const [lastInvite, setLastInvite] = useState<string | null>(null);
+  const [removing, setRemoving] = useState<{ memberId: string; name: string } | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const refresh = () => queryClient.invalidateQueries({ queryKey: orpc.admin.key() });
+  const options = { onSuccess: refresh, onError: (e: Error) => setError(e.message) };
+  const rename = useMutation(orpc.admin.orgs.rename.mutationOptions(options));
+  const invite = useMutation(
+    orpc.admin.orgs.invite.mutationOptions({
+      ...options,
+      onSuccess: async (result) => {
+        setLastInvite(inviteUrl(result.invitationId));
+        setEmail("");
+        await refresh();
+      },
+    }),
+  );
+  const setMemberRole = useMutation(orpc.admin.orgs.setMemberRole.mutationOptions(options));
+  const removeMember = useMutation(orpc.admin.orgs.removeMember.mutationOptions(options));
+  const deleteOrg = useMutation(
+    orpc.admin.orgs.delete.mutationOptions({
+      onError: (e: Error) => setError(e.message),
+      onSuccess: async () => {
+        setDeleting(false);
+        await queryClient.invalidateQueries();
+        onClose();
+      },
+    }),
+  );
+  const enter = useMutation(
+    orpc.admin.orgs.enter.mutationOptions({
+      onError: (e: Error) => setError(e.message),
+      onSuccess: async () => {
+        queryClient.clear();
+        await navigate({ to: "/" });
+      },
+    }),
+  );
+  if (!org) return null;
+
+  return (
+    <div className="space-y-4 rounded-2xl border border-primary/40 bg-card p-5">
+      <div className="flex flex-wrap items-center gap-2">
+        <h3 className="text-base font-semibold">{org.name}</h3>
+        <span className="text-xs text-muted-foreground">{org.slug}</span>
+        <div className="ml-auto flex gap-2">
+          <Button variant="secondary" onClick={() => enter.mutate({ orgId })} disabled={enter.isPending}>
+            Masuk ke perusahaan
+          </Button>
+          <Button variant="secondary" onClick={onClose}>
+            Tutup
+          </Button>
+        </div>
+      </div>
+      {error && <p className="text-sm text-destructive">{error}</p>}
+      <p className="rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground">
+        Sebagai admin sistem kamu bisa mengelola perusahaan ini tanpa menjadi anggotanya. Isi percakapan
+        anggota tetap pribadi dan tidak bisa dibuka. Semua tindakan di sini tercatat di log audit.
+      </p>
+
+      <form
+        className="flex max-w-md gap-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          setError(null);
+          rename.mutate({ orgId, name: name.trim() || org.name });
+        }}
+      >
+        <Input
+          placeholder={`Ganti nama (sekarang: ${org.name})`}
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+        />
+        <Button type="submit" disabled={!name.trim() || rename.isPending}>
+          Ganti nama
+        </Button>
+      </form>
+
+      <div>
+        <h4 className="mb-2 text-sm font-semibold">Anggota ({org.members.length})</h4>
+        <ul className="divide-y divide-border rounded-xl border border-border">
+          {org.members.map((m) => (
+            <li key={m.memberId} className="flex items-center gap-3 px-3 py-2">
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium">{m.name}</p>
+                <p className="truncate text-xs text-muted-foreground">{m.email}</p>
+              </div>
+              <select
+                value={m.role}
+                onChange={(e) => {
+                  setError(null);
+                  setMemberRole.mutate({ orgId, memberId: m.memberId, role: e.target.value as OrgRoleName });
+                }}
+                className="h-8 rounded-lg border border-border bg-card px-2 text-xs"
+              >
+                <option value={ORG_ROLE.member}>{ORG_ROLE_LABEL[ORG_ROLE.member]}</option>
+                <option value={ORG_ROLE.admin}>{ORG_ROLE_LABEL[ORG_ROLE.admin]}</option>
+              </select>
+              <button
+                type="button"
+                aria-label={`Keluarkan ${m.name}`}
+                onClick={() => setRemoving({ memberId: m.memberId, name: m.name })}
+                className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-destructive"
+              >
+                <Trash2 className="size-4" />
+              </button>
+            </li>
+          ))}
+          {org.members.length === 0 && (
+            <li className="px-3 py-3 text-sm text-muted-foreground">Belum ada anggota.</li>
+          )}
+        </ul>
+      </div>
+
+      <div>
+        <h4 className="mb-2 text-sm font-semibold">Undang anggota</h4>
+        <form
+          className="flex flex-wrap gap-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            setError(null);
+            invite.mutate({ orgId, email, role });
+          }}
+        >
+          <Input
+            type="email"
+            className="max-w-xs"
+            placeholder="email@perusahaan.co.id"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+          />
+          <select
+            value={role}
+            onChange={(e) => setRole(e.target.value as OrgRoleName)}
+            className="h-10 rounded-lg border border-border bg-card px-3 text-sm"
+          >
+            <option value={ORG_ROLE.member}>Anggota</option>
+            <option value={ORG_ROLE.admin}>Admin</option>
+          </select>
+          <Button type="submit" disabled={invite.isPending}>
+            Undang
+          </Button>
+        </form>
+        {lastInvite && (
+          <p className="mt-2 rounded-lg bg-accent px-3 py-2 text-xs break-all">
+            Tautan undangan: <b>{lastInvite}</b>
+          </p>
+        )}
+        {org.invitations.length > 0 && (
+          <ul className="mt-2 space-y-1 text-xs text-muted-foreground">
+            {org.invitations.map((i) => (
+              <li key={i.id}>
+                {i.email} · {ORG_ROLE_LABEL[i.role] ?? i.role} · berlaku sampai {formatDate(i.expiresAt)}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <div className="border-t border-border pt-4">
+        <Button className="bg-destructive text-white" onClick={() => setDeleting(true)}>
+          Hapus perusahaan
+        </Button>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Menghapus semua data perusahaan ini (percakapan, proyek, file, batas). Tidak bisa dibatalkan.
+        </p>
+      </div>
+
+      <ConfirmDialog
+        open={removing !== null}
+        title="Keluarkan anggota?"
+        description={`${removing?.name ?? ""} tidak lagi bisa mengakses perusahaan ini. Percakapannya tetap tersimpan.`}
+        confirmLabel="Keluarkan"
+        busy={removeMember.isPending}
+        onCancel={() => setRemoving(null)}
+        onConfirm={() =>
+          removing &&
+          removeMember.mutate({ orgId, memberId: removing.memberId }, { onSettled: () => setRemoving(null) })
+        }
+      />
+      <PromptDialog
+        open={deleting}
+        title={`Hapus ${org.name}?`}
+        label="Ketik nama perusahaan untuk konfirmasi"
+        confirmLabel="Hapus permanen"
+        onCancel={() => setDeleting(false)}
+        onSubmit={(confirmName) => {
+          setError(null);
+          deleteOrg.mutate({ orgId, confirmName });
+        }}
+      />
+    </div>
+  );
+}
+
 function OrgsTab() {
   const { data: orgs = [] } = useQuery(orpc.admin.orgs.list.queryOptions());
+  const [selected, setSelected] = useState<string | null>(null);
   return (
-    <div className="overflow-x-auto rounded-2xl border border-border bg-card">
-      <table className="w-full text-left text-sm">
-        <thead className="border-b border-border text-xs text-muted-foreground">
-          <tr>
-            <th className="px-4 py-3 font-medium">Organisasi</th>
-            <th className="px-4 py-3 font-medium">Anggota</th>
-            <th className="px-4 py-3 font-medium">Percakapan</th>
-            <th className="px-4 py-3 font-medium">Dibuat</th>
-          </tr>
-        </thead>
-        <tbody>
-          {orgs.map((o) => (
-            <tr key={o.id} className="border-b border-border last:border-0">
-              <td className="px-4 py-3">
-                <p className="font-medium">{o.name}</p>
-                <p className="text-xs text-muted-foreground">{o.slug}</p>
-              </td>
-              <td className="px-4 py-3">{o.memberCount}</td>
-              <td className="px-4 py-3">{o.threadCount}</td>
-              <td className="px-4 py-3 text-muted-foreground">{formatDate(o.createdAt)}</td>
+    <div className="space-y-4">
+      <div className="overflow-x-auto rounded-2xl border border-border bg-card">
+        <table className="w-full text-left text-sm">
+          <thead className="border-b border-border text-xs text-muted-foreground">
+            <tr>
+              <th className="px-4 py-3 font-medium">Organisasi</th>
+              <th className="px-4 py-3 font-medium">Anggota</th>
+              <th className="px-4 py-3 font-medium">Percakapan</th>
+              <th className="px-4 py-3 font-medium">Token bulan ini</th>
+              <th className="px-4 py-3 font-medium">Biaya bulan ini</th>
+              <th className="px-4 py-3 font-medium">Dibuat</th>
+              <th className="px-4 py-3" />
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {orgs.map((o) => (
+              <tr key={o.id} className="border-b border-border last:border-0">
+                <td className="px-4 py-3">
+                  <p className="font-medium">{o.name}</p>
+                  <p className="text-xs text-muted-foreground">{o.slug}</p>
+                </td>
+                <td className="px-4 py-3">{o.memberCount}</td>
+                <td className="px-4 py-3">{o.threadCount}</td>
+                <td className="px-4 py-3">{Math.round(o.monthTokens).toLocaleString("id-ID")}</td>
+                <td className="px-4 py-3">Rp {Math.round(o.monthCostIdr).toLocaleString("id-ID")}</td>
+                <td className="px-4 py-3 text-muted-foreground">{formatDate(o.createdAt)}</td>
+                <td className="px-4 py-3 text-right">
+                  <Button variant="ghost" className="h-8 text-xs" onClick={() => setSelected(o.id)}>
+                    Kelola
+                  </Button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {selected && <OrgManager key={selected} orgId={selected} onClose={() => setSelected(null)} />}
     </div>
   );
 }
@@ -311,6 +601,18 @@ const auditLabel: Record<string, string> = {
   "system.user.set-role": "Mengubah peran sistem",
   "system.user.ban": "Memblokir pengguna",
   "system.user.unban": "Membuka blokir pengguna",
+  "system.user.set-password": "Mengubah password pengguna",
+  "system.user.set-email": "Mengubah email pengguna",
+  "system.user.delete": "Menghapus akun",
+  "system.org.rename": "Mengganti nama perusahaan",
+  "system.org.delete": "Menghapus perusahaan",
+  "system.org.enter": "Masuk ke perusahaan",
+  "system.org.invite": "Mengundang anggota (admin sistem)",
+  "system.org.set-member-role": "Mengubah peran anggota (admin sistem)",
+  "system.org.remove-member": "Mengeluarkan anggota (admin sistem)",
+  "usage.reset": "Mereset kuota",
+  "budget.set": "Mengatur batas pemakaian",
+  "budget.delete": "Menghapus batas pemakaian",
   "system.role.promote": "Menjadikan admin (CLI)",
   "system.role.demote": "Mencabut admin (CLI)",
 };

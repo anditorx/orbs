@@ -2,18 +2,28 @@ import { eventIterator, oc } from "@orpc/contract";
 import { z } from "zod";
 import {
   AdminOrg,
+  AdminOrgDetail,
   AdminUser,
   AuditEntry,
+  BudgetInput,
+  BudgetStatus,
+  Customization,
+  CustomizationInput,
+  CustomizationKind,
   Engine,
   EngineOption,
   FileContent,
   Me,
   Mode,
   OrbsEvent,
+  Period,
   Project,
   ProjectFileEntry,
   SystemRole,
+  TeamUsage,
   Thread,
+  UsageSummary,
+  UserUsageDetail,
 } from "./schemas.ts";
 
 /**
@@ -74,7 +84,7 @@ export const contract = {
     readFile: oc.input(z.object({ projectId: z.string(), path: z.string() })).output(FileContent),
     delete: oc.input(z.object({ projectId: z.string() })).output(z.object({ deleted: z.literal(true) })),
   },
-  /** System administration — requires a system administrator (user.role = "admin"). */
+  /** System administration — requires a system administrator (user.role = "system.admin"). */
   admin: {
     overview: oc.output(
       z.object({
@@ -106,15 +116,87 @@ export const contract = {
         .input(z.object({ userId: z.string(), reason: z.string().trim().max(500).optional() }))
         .output(z.object({ ok: z.literal(true) })),
       unban: oc.input(z.object({ userId: z.string() })).output(z.object({ ok: z.literal(true) })),
+      /** Sets a new password and signs the account out everywhere. */
+      setPassword: oc
+        .input(z.object({ userId: z.string(), password: z.string().min(8).max(200) }))
+        .output(z.object({ ok: z.literal(true) })),
+      setEmail: oc
+        .input(z.object({ userId: z.string(), email: z.string().trim().email() }))
+        .output(z.object({ ok: z.literal(true) })),
+      /** Permanently deletes an account. Its usage history is kept. */
+      delete: oc.input(z.object({ userId: z.string() })).output(z.object({ ok: z.literal(true) })),
     },
     orgs: {
       list: oc.output(z.array(AdminOrg)),
+      detail: oc.input(z.object({ orgId: z.string() })).output(AdminOrgDetail),
+      rename: oc
+        .input(z.object({ orgId: z.string(), name: z.string().trim().min(1).max(200) }))
+        .output(z.object({ ok: z.literal(true) })),
+      /** `confirmName` must equal the company name exactly. */
+      delete: oc
+        .input(z.object({ orgId: z.string(), confirmName: z.string() }))
+        .output(z.object({ ok: z.literal(true) })),
+      /** Makes this company the system admin's active workspace, without becoming a member. */
+      enter: oc.input(z.object({ orgId: z.string() })).output(z.object({ ok: z.literal(true) })),
+      invite: oc
+        .input(
+          z.object({
+            orgId: z.string(),
+            email: z.string().trim().email(),
+            role: z.enum(["org.admin", "org.member"]),
+          }),
+        )
+        .output(z.object({ invitationId: z.string() })),
+      setMemberRole: oc
+        .input(
+          z.object({ orgId: z.string(), memberId: z.string(), role: z.enum(["org.admin", "org.member"]) }),
+        )
+        .output(z.object({ ok: z.literal(true) })),
+      removeMember: oc
+        .input(z.object({ orgId: z.string(), memberId: z.string() }))
+        .output(z.object({ ok: z.literal(true) })),
     },
     audit: {
       list: oc
         .input(z.object({ limit: z.number().int().min(1).max(500).default(100) }))
         .output(z.array(AuditEntry)),
     },
+  },
+  /** Usage & budgets. `mine` is for everyone; the rest need an org owner/admin. */
+  usage: {
+    mine: oc.input(z.object({ period: Period.optional() })).output(UsageSummary),
+    team: oc
+      .input(z.object({ period: Period.optional(), projectId: z.string().nullable().default(null) }))
+      .output(TeamUsage),
+    userDetail: oc.input(z.object({ userId: z.string(), period: Period.optional() })).output(UserUsageDetail),
+    /** Non-destructive: only usage after the reset counts toward budgets. */
+    reset: oc
+      .input(
+        z.object({
+          userId: z.string(),
+          projectId: z.string().nullable().default(null),
+          reason: z.string().trim().max(500).optional(),
+        }),
+      )
+      .output(z.object({ ok: z.literal(true) })),
+    budgets: {
+      list: oc.output(z.array(BudgetStatus)),
+      /** Creates or updates the budget with the same user, project and unit. */
+      set: oc.input(BudgetInput).output(z.object({ id: z.string() })),
+      delete: oc.input(z.object({ id: z.string() })).output(z.object({ ok: z.literal(true) })),
+    },
+    settings: {
+      get: oc.output(z.object({ fxUsdIdr: z.number() })),
+      set: oc
+        .input(z.object({ fxUsdIdr: z.number().min(1000).max(100_000) }))
+        .output(z.object({ fxUsdIdr: z.number() })),
+    },
+  },
+  customizations: {
+    list: oc.input(z.object({ kind: CustomizationKind.optional() })).output(z.array(Customization)),
+    create: oc.input(CustomizationInput).output(Customization),
+    update: oc.input(z.object({ id: z.string(), patch: CustomizationInput.partial() })).output(Customization),
+    delete: oc.input(z.object({ id: z.string() })).output(z.object({ deleted: z.literal(true) })),
   },
   events: {
     list: oc

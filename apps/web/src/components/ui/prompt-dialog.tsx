@@ -9,6 +9,7 @@ export function PromptDialog({
   label,
   initialValue = "",
   confirmLabel = "Simpan",
+  inputType = "text",
   onSubmit,
   onCancel,
 }: {
@@ -17,6 +18,7 @@ export function PromptDialog({
   label: string;
   initialValue?: string;
   confirmLabel?: string;
+  inputType?: string;
   onSubmit: (value: string) => void;
   onCancel: () => void;
 }) {
@@ -50,6 +52,7 @@ export function PromptDialog({
         <h2 className="text-base font-semibold">{title}</h2>
         <Input
           className="mt-4"
+          type={inputType}
           aria-label={label}
           placeholder={label}
           value={value}

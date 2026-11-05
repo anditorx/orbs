@@ -15,7 +15,7 @@ const url = process.env.DATABASE_URL;
 if (!url) throw new Error("DATABASE_URL is not set");
 
 const { db, sql: client } = createDatabase(url);
-const role = mode === "promote" ? "admin" : "user";
+const role = mode === "promote" ? "system.admin" : "user";
 const updated = await db
   .update(schema.user)
   .set({ role })
@@ -32,4 +32,6 @@ if (updated.length === 0) {
   console.error(`no user with email ${emailArg}`);
   process.exit(1);
 }
-console.log(`${updated[0]?.email} is now ${role === "admin" ? "a system administrator" : "a regular user"}`);
+console.log(
+  `${updated[0]?.email} is now ${role === "system.admin" ? "a system administrator" : "a regular user"}`,
+);

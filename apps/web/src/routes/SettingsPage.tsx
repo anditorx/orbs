@@ -1,3 +1,4 @@
+import { isOrgAdmin, ORG_ROLE, ORG_ROLE_LABEL, type OrgRoleName } from "@orbs/protocol";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { Building2, Check, Copy, Keyboard, Mail, Palette, Trash2, UserRound } from "lucide-react";
@@ -130,7 +131,7 @@ function Account() {
   );
 }
 
-const ROLE_LABEL: Record<string, string> = { owner: "Pemilik", admin: "Admin", member: "Anggota" };
+const ROLE_LABEL = ORG_ROLE_LABEL;
 
 function inviteLink(invitationId: string) {
   return `${window.location.origin}/invite/${invitationId}`;
@@ -159,14 +160,14 @@ function Workspace() {
   const { data: org, refetch } = authClient.useActiveOrganization();
   const [orgName, setOrgName] = useState("");
   const [email, setEmail] = useState("");
-  const [role, setRole] = useState<"member" | "admin">("member");
+  const [role, setRole] = useState<OrgRoleName>(ORG_ROLE.member);
   const [message, setMessage] = useState<string | null>(null);
   const [lastInvite, setLastInvite] = useState<{ id: string; email: string } | null>(null);
   const [removing, setRemoving] = useState<{ id: string; name: string } | null>(null);
   useEffect(() => setOrgName(org?.name ?? ""), [org?.name]);
 
-  const myRole = org?.members.find((m) => m.userId === session?.user.id)?.role ?? "member";
-  const canManage = myRole === "owner" || myRole === "admin";
+  const myRole = org?.members.find((m) => m.userId === session?.user.id)?.role ?? ORG_ROLE.member;
+  const canManage = isOrgAdmin(myRole);
   const pending = (org?.invitations ?? []).filter((i) => i.status === "pending");
 
   async function rename(e: FormEvent) {
@@ -215,7 +216,7 @@ function Workspace() {
                 <p className="truncate text-sm font-medium">{m.user.name}</p>
                 <p className="truncate text-xs text-muted-foreground">{m.user.email}</p>
               </div>
-              {canManage && m.role !== "owner" && m.userId !== session?.user.id ? (
+              {canManage && m.userId !== session?.user.id ? (
                 <select
                   value={m.role}
                   onChange={async (e) => {
@@ -224,15 +225,15 @@ function Workspace() {
                   }}
                   className="h-8 rounded-lg border border-border bg-card px-2 text-xs"
                 >
-                  <option value="member">Anggota</option>
-                  <option value="admin">Admin</option>
+                  <option value={ORG_ROLE.member}>Anggota</option>
+                  <option value={ORG_ROLE.admin}>Admin</option>
                 </select>
               ) : (
                 <span className="rounded-full bg-muted px-2 py-0.5 text-xs">
                   {ROLE_LABEL[m.role] ?? m.role}
                 </span>
               )}
-              {canManage && m.role !== "owner" && m.userId !== session?.user.id && (
+              {canManage && m.userId !== session?.user.id && (
                 <button
                   type="button"
                   aria-label={`Keluarkan ${m.user.name}`}
@@ -263,11 +264,11 @@ function Workspace() {
             />
             <select
               value={role}
-              onChange={(e) => setRole(e.target.value as "member" | "admin")}
+              onChange={(e) => setRole(e.target.value as OrgRoleName)}
               className="h-10 rounded-lg border border-border bg-card px-3 text-sm"
             >
-              <option value="member">Anggota</option>
-              <option value="admin">Admin</option>
+              <option value={ORG_ROLE.member}>Anggota</option>
+              <option value={ORG_ROLE.admin}>Admin</option>
             </select>
             <Button type="submit">
               <Mail className="size-4" /> Undang
