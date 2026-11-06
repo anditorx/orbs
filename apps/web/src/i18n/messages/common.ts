@@ -3,6 +3,8 @@ import { defineMessages } from "../define.ts";
 export const common = defineMessages(
   {
     "common.cancel": "Cancel",
+    "secret.show": "Show value",
+    "secret.hide": "Hide value",
     "common.save": "Save",
     "common.delete": "Delete",
     "common.close": "Close",
@@ -22,6 +24,8 @@ export const common = defineMessages(
   },
   {
     "common.cancel": "Batal",
+    "secret.show": "Tampilkan isi",
+    "secret.hide": "Sembunyikan isi",
     "common.save": "Simpan",
     "common.delete": "Hapus",
     "common.close": "Tutup",

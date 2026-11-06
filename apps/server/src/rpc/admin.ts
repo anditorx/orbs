@@ -9,8 +9,10 @@ import { env } from "../env.ts";
 import { t } from "../i18n.ts";
 import { parseDomains } from "../signupPolicy.ts";
 import { resolvePeriod } from "../usage.ts";
+import { adminConnectorsRouter } from "./adminConnectors.ts";
 import { adminOrgManagement, adminUserManagement } from "./adminManage.ts";
-import { adminModelsRouter } from "./adminModels.ts";
+import { adminModelsRouter, adminModelUsageRouter } from "./adminModels.ts";
+import { adminProvidersRouter } from "./adminProviders.ts";
 import { systemAdmin } from "./base.ts";
 
 /** Better-Auth admin endpoints throw APIError; surface their message to the admin UI. */
@@ -197,6 +199,12 @@ export const adminRouter = {
   },
 
   models: adminModelsRouter,
+
+  ...adminModelUsageRouter,
+
+  connectors: adminConnectorsRouter,
+
+  providers: adminProvidersRouter,
 
   orgs: {
     ...adminOrgManagement,

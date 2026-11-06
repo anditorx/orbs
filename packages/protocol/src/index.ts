@@ -1,4 +1,7 @@
 export * from "./contract.ts";
+export * from "./curl.ts";
+export * from "./providerChat.ts";
+export * from "./referencePrices.ts";
 export * from "./roles.ts";
 export * from "./schemas.ts";
 export * from "./usage.ts";

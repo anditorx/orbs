@@ -10,6 +10,7 @@ import {
   byDay,
   byModel,
   byProject,
+  byProvider,
   byThread,
   getFxRate,
   loadBudgets,
@@ -43,9 +44,10 @@ export const usageRouter = {
   mine: inOrg.usage.mine.handler(async ({ context, input }) => {
     const period = resolvePeriod(input.period);
     const f = { userId: context.user.id };
-    const [totals, projects, models, days, budgets] = await Promise.all([
+    const [totals, projects, providers, models, days, budgets] = await Promise.all([
       totalsFor(context.orgId, period, f),
       byProject(context.orgId, period, f),
+      byProvider(context.orgId, period, f),
       byModel(context.orgId, period, f),
       byDay(context.orgId, period, f),
       budgetStatusFor(context.orgId, period, [context.user.id]),
@@ -54,6 +56,7 @@ export const usageRouter = {
       period: period.key,
       totals,
       byProject: projects,
+      byProvider: providers,
       byModel: models,
       byDay: days,
       budgets: budgets.get(context.user.id) ?? [],
@@ -89,6 +92,7 @@ export const usageRouter = {
           email: m.email,
           requests: u?.requests ?? 0,
           totalTokens: u?.totalTokens ?? 0,
+          costMicroUsd: u?.costMicroUsd ?? 0,
           costIdr: u?.costIdr ?? 0,
           sharePercent: totals.costIdr > 0 ? Math.round(((u?.costIdr ?? 0) / totals.costIdr) * 100) : 0,
           // When viewing one project, only global budgets and that project's budgets are relevant.
@@ -106,11 +110,13 @@ export const usageRouter = {
     const user = await requireMember(context.orgId, input.userId);
     const period = resolvePeriod(input.period);
     const f = { userId: user.id };
-    const [totals, projects, threads, models, budgets] = await Promise.all([
+    const [totals, projects, threads, providers, models, days, budgets] = await Promise.all([
       totalsFor(context.orgId, period, f),
       byProject(context.orgId, period, f),
       byThread(context.orgId, period, f),
+      byProvider(context.orgId, period, f),
       byModel(context.orgId, period, f),
+      byDay(context.orgId, period, f),
       budgetStatusFor(context.orgId, period, [user.id]),
     ]);
     return {
@@ -119,7 +125,9 @@ export const usageRouter = {
       totals,
       byProject: projects,
       byThread: threads,
+      byProvider: providers,
       byModel: models,
+      byDay: days,
       budgets: budgets.get(user.id) ?? [],
     };
   }),

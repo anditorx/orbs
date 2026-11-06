@@ -71,6 +71,76 @@
       "when": 1793901761538,
       "tag": "0009_drop_model_catalog",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1793903437701,
+      "tag": "0010_connections",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1793928738877,
+      "tag": "0011_user_connector_app",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1793929370028,
+      "tag": "0012_drop_org_connector",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1793930112649,
+      "tag": "0013_custom_mcp_server",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1793931241319,
+      "tag": "0014_user_connector_app_labels",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1793932978762,
+      "tag": "0015_model_provider",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1793938220566,
+      "tag": "0016_model_listing",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1793940902913,
+      "tag": "0017_provider_fail_streak",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1793947446847,
+      "tag": "0018_turns_and_billing",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1793964635353,
+      "tag": "0019_connection_workspaces",
+      "breakpoints": true
     }
   ]
 }

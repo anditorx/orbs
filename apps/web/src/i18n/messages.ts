@@ -2,8 +2,10 @@ import { admin } from "./messages/admin.ts";
 import { auth } from "./messages/auth.ts";
 import { code } from "./messages/code.ts";
 import { common } from "./messages/common.ts";
+import { connections } from "./messages/connections.ts";
 import { customize } from "./messages/customize.ts";
 import { models } from "./messages/models.ts";
+import { providers } from "./messages/providers.ts";
 import { settings } from "./messages/settings.ts";
 import { shell } from "./messages/shell.ts";
 import { thread } from "./messages/thread.ts";
@@ -21,6 +23,8 @@ export const messages = {
     ...thread.en,
     ...code.en,
     ...models.en,
+    ...providers.en,
+    ...connections.en,
   },
   id: {
     ...common.id,
@@ -33,6 +37,8 @@ export const messages = {
     ...thread.id,
     ...code.id,
     ...models.id,
+    ...providers.id,
+    ...connections.id,
   },
 } as const;
 

@@ -153,6 +153,8 @@ export const UsageTotals = z.object({
   outputTokens: z.number().int(),
   reasoningTokens: z.number().int(),
   totalTokens: z.number().int(),
+  /** Cost in millionths of a US dollar (integer, no float drift); 1_000_000 = $1. */
+  costMicroUsd: z.number().int(),
   costIdr: z.number().int(),
 });
 export type UsageTotals = z.infer<typeof UsageTotals>;
@@ -162,6 +164,8 @@ export const UsageByProject = z.object({
   projectName: z.string().nullable(),
   requests: z.number().int(),
   totalTokens: z.number().int(),
+  /** Cost in millionths of a US dollar (integer, no float drift); 1_000_000 = $1. */
+  costMicroUsd: z.number().int(),
   costIdr: z.number().int(),
 });
 export type UsageByProject = z.infer<typeof UsageByProject>;
@@ -171,13 +175,26 @@ export const UsageByModel = z.object({
   modelId: z.string(),
   requests: z.number().int(),
   totalTokens: z.number().int(),
+  /** Cost in millionths of a US dollar (integer, no float drift); 1_000_000 = $1. */
+  costMicroUsd: z.number().int(),
   costIdr: z.number().int(),
 });
 export type UsageByModel = z.infer<typeof UsageByModel>;
 
+export const UsageByProvider = z.object({
+  provider: z.string(),
+  requests: z.number().int(),
+  totalTokens: z.number().int(),
+  costMicroUsd: z.number().int(),
+  costIdr: z.number().int(),
+});
+export type UsageByProvider = z.infer<typeof UsageByProvider>;
+
 export const UsageByDay = z.object({
   day: z.string(),
   totalTokens: z.number().int(),
+  /** Cost in millionths of a US dollar (integer, no float drift); 1_000_000 = $1. */
+  costMicroUsd: z.number().int(),
   costIdr: z.number().int(),
 });
 export type UsageByDay = z.infer<typeof UsageByDay>;
@@ -201,6 +218,7 @@ export const UsageSummary = z.object({
   period: Period,
   totals: UsageTotals,
   byProject: z.array(UsageByProject),
+  byProvider: z.array(UsageByProvider),
   byModel: z.array(UsageByModel),
   byDay: z.array(UsageByDay),
   budgets: z.array(BudgetStatus),
@@ -213,6 +231,8 @@ export const TeamUsageRow = z.object({
   email: z.string(),
   requests: z.number().int(),
   totalTokens: z.number().int(),
+  /** Cost in millionths of a US dollar (integer, no float drift); 1_000_000 = $1. */
+  costMicroUsd: z.number().int(),
   costIdr: z.number().int(),
   /** Share of the team's total cost in this view, 0–100. */
   sharePercent: z.number().int(),
@@ -238,6 +258,8 @@ export const UsageByThread = z.object({
   projectName: z.string().nullable(),
   requests: z.number().int(),
   totalTokens: z.number().int(),
+  /** Cost in millionths of a US dollar (integer, no float drift); 1_000_000 = $1. */
+  costMicroUsd: z.number().int(),
   costIdr: z.number().int(),
   lastAt: z.string(),
 });
@@ -250,7 +272,9 @@ export const UserUsageDetail = z.object({
   totals: UsageTotals,
   byProject: z.array(UsageByProject),
   byThread: z.array(UsageByThread),
+  byProvider: z.array(UsageByProvider),
   byModel: z.array(UsageByModel),
+  byDay: z.array(UsageByDay),
   budgets: z.array(BudgetStatus),
 });
 export type UserUsageDetail = z.infer<typeof UserUsageDetail>;
@@ -360,10 +384,14 @@ export const AdminModel = z.object({
   outputUsdPerMtok: z.number().nullable(),
   qualityScore: z.number().nullable(),
   maxDataClass: DataClass,
-  /** Global switch: an inactive model is unusable in every organization. */
+  /** "Enabled": a disabled model can't be chosen anywhere (it is shown greyed out). */
   active: z.boolean(),
-  /** In how many organizations this model appears. */
-  orgCount: z.number().int(),
+  /** "Active": the model appears in the model lists. Off = hidden everywhere. */
+  listed: z.boolean(),
+  /** Its provider is connected right now. When not, the model is shown dimmed and can't be chosen. */
+  providerConnected: z.boolean(),
+  /** The organizations whose model list includes this model, by name. */
+  orgs: z.array(z.object({ id: z.string(), name: z.string(), enabled: z.boolean() })),
 });
 export type AdminModel = z.infer<typeof AdminModel>;
 
@@ -376,6 +404,7 @@ export const AdminModelInput = z.object({
   qualityScore: z.number().min(0).max(1).nullable().default(null),
   maxDataClass: DataClass.default("internal"),
   active: z.boolean().default(true),
+  listed: z.boolean().default(true),
 });
 export type AdminModelInput = z.infer<typeof AdminModelInput>;
 
@@ -390,6 +419,7 @@ export const AdminModelPatch = z
     qualityScore: z.number().min(0).max(1).nullable(),
     maxDataClass: DataClass,
     active: z.boolean(),
+    listed: z.boolean(),
   })
   .partial();
 export type AdminModelPatch = z.infer<typeof AdminModelPatch>;
@@ -403,9 +433,218 @@ export const OrgModelRow = z.object({
   maxDataClass: DataClass,
   /** The model's global switch. */
   active: z.boolean(),
+  /** Its provider is connected right now. */
+  providerConnected: z.boolean(),
   /** Whether the model appears for this organization. */
   assigned: z.boolean(),
   /** Whether it can be used there (only meaningful when assigned). */
   enabled: z.boolean(),
 });
 export type OrgModelRow = z.infer<typeof OrgModelRow>;
+
+// ---- External connections (MCP connectors) ----
+
+export const ConnectorToolKind = z.enum(["read", "write", "destructive", "interactive", "unknown"]);
+export type ConnectorToolKind = z.infer<typeof ConnectorToolKind>;
+
+export const ConnectorProviderStatus = z.object({
+  provider: z.string(),
+  name: z.string(),
+  /** The server has an encryption key, so credentials can be stored. */
+  vaultReady: z.boolean(),
+  /** An OAuth app is available: the installation's or the person's own. */
+  configured: z.boolean(),
+  /** The person's own OAuth app, if they registered one (the secret is never returned). */
+  ownApp: z
+    .object({
+      clientId: z.string(),
+      appName: z.string().nullable(),
+      description: z.string().nullable(),
+      /** The last characters of the stored secret; the secret itself is never returned. */
+      secretHint: z.string().nullable(),
+    })
+    .nullable(),
+  /** Exact URL to register as the redirect URI when creating an app in the provider's console. */
+  redirectUri: z.string(),
+  connection: z
+    .object({
+      status: z.enum(["active", "needs_reauth"]),
+      /** How it was connected: the service's sign-in flow, or a token the person pasted. */
+      authMethod: z.enum(["oauth", "token"]),
+      accountName: z.string().nullable(),
+      accountEmail: z.string().nullable(),
+      workspaceName: z.string().nullable(),
+      connectedAt: z.string(),
+      lastUsedAt: z.string().nullable(),
+    })
+    .nullable(),
+});
+export type ConnectorProviderStatus = z.infer<typeof ConnectorProviderStatus>;
+
+export const ConnectorTool = z.object({
+  name: z.string(),
+  description: z.string(),
+  kind: ConnectorToolKind,
+  /** Whether Orbs' own policy lets this tool run (only read-only tools do). */
+  allowed: z.boolean(),
+  /** JSON Schema of the tool's arguments, when the service publishes one. */
+  inputSchema: z.record(z.string(), z.unknown()).nullable(),
+});
+export type ConnectorTool = z.infer<typeof ConnectorTool>;
+
+export const ConnectorAccount = z.object({
+  name: z.string().nullable(),
+  email: z.string().nullable(),
+  workspaces: z.array(z.string()),
+});
+export type ConnectorAccount = z.infer<typeof ConnectorAccount>;
+
+export const AdminConnector = z.object({
+  provider: z.string(),
+  name: z.string(),
+  vaultReady: z.boolean(),
+  configured: z.boolean(),
+  /** Public identifier of the OAuth app (the secret is never returned). */
+  clientId: z.string().nullable(),
+  /** Exact URL to register as the redirect URI in the provider's console. */
+  redirectUri: z.string(),
+  /** How many people are currently connected. */
+  connectionCount: z.number().int(),
+});
+export type AdminConnector = z.infer<typeof AdminConnector>;
+
+// ---- Custom MCP servers (added by a person, for their own account) ----
+
+export const CustomMcpServer = z.object({
+  id: z.string(),
+  name: z.string(),
+  url: z.string(),
+  host: z.string(),
+  hasToken: z.boolean(),
+  allowedTools: z.array(z.string()),
+  createdAt: z.string(),
+  lastUsedAt: z.string().nullable(),
+});
+export type CustomMcpServer = z.infer<typeof CustomMcpServer>;
+
+export const CustomMcpTool = z.object({
+  name: z.string(),
+  description: z.string(),
+  allowed: z.boolean(),
+  /** What the server claims about itself; informational only, never grants access. */
+  readOnlyHint: z.boolean().nullable(),
+  destructiveHint: z.boolean().nullable(),
+  inputSchema: z.record(z.string(), z.unknown()).nullable(),
+});
+export type CustomMcpTool = z.infer<typeof CustomMcpTool>;
+
+// ---- AI model providers (credentials managed by system administrators) ----
+
+export const ModelProviderStatus = z.object({
+  provider: z.string(),
+  providerName: z.string(),
+  vaultReady: z.boolean(),
+  configured: z.boolean(),
+  status: z.enum(["connected", "failed", "not_configured"]),
+  /** The label the administrator gave this credential. */
+  name: z.string().nullable(),
+  /** Last four characters of the stored key; the key itself is never returned. */
+  keyHint: z.string().nullable(),
+  projectName: z.string().nullable(),
+  projectNumber: z.string().nullable(),
+  lastError: z.string().nullable(),
+  lastCheckedAt: z.string().nullable(),
+  /** How many registry models belong to this provider (they are deleted with it). */
+  modelCount: z.number().int(),
+  /** The administrator confirmed the provider account is on a paid plan. Models can't be used for chat before that. */
+  billingConfirmed: z.boolean(),
+});
+export type ModelProviderStatus = z.infer<typeof ModelProviderStatus>;
+
+export const ProviderModel = z.object({
+  /** Full resource name, e.g. "models/gemini-2.5-flash". */
+  name: z.string(),
+  displayName: z.string(),
+  description: z.string(),
+  inputTokenLimit: z.number().nullable(),
+  outputTokenLimit: z.number().nullable(),
+  methods: z.array(z.string()),
+  /** False when the provider lists the model but refuses it for this project. */
+  usable: z.boolean().optional(),
+});
+export type ProviderModel = z.infer<typeof ProviderModel>;
+
+export const ProviderEndpointCheck = z.object({
+  id: z.string(),
+  label: z.string(),
+  method: z.enum(["GET", "POST"]),
+  path: z.string(),
+  status: z.enum(["ok", "failed", "skipped"]),
+  httpStatus: z.number().nullable(),
+  ms: z.number().nullable(),
+  detail: z.string().nullable(),
+});
+export type ProviderEndpointCheck = z.infer<typeof ProviderEndpointCheck>;
+
+export const ProviderDiagnostics = z.object({
+  checkedAt: z.string(),
+  /** Why the model list couldn't be read, when it couldn't. */
+  modelsError: z.string().nullable(),
+  models: z.array(ProviderModel),
+  endpoints: z.array(ProviderEndpointCheck),
+});
+export type ProviderDiagnostics = z.infer<typeof ProviderDiagnostics>;
+
+/** Across every organization: what each provider and model cost this period (system administrators only). */
+export const SystemModelUsage = z.object({
+  period: Period,
+  byProvider: z.array(UsageByProvider.extend({ people: z.number().int() })),
+  byModel: z.array(UsageByModel.extend({ people: z.number().int() })),
+});
+export type SystemModelUsage = z.infer<typeof SystemModelUsage>;
+
+// ---- Assistant replies ("turns") ----
+
+export const TurnStatus = z.enum(["queued", "running", "completed", "failed", "cancelled"]);
+export type TurnStatus = z.infer<typeof TurnStatus>;
+
+/** Why a reply didn't happen, as a code the screen turns into a sentence in the person's language. */
+export const TurnErrorCode = z.enum([
+  "no_model",
+  "model_unavailable",
+  "model_refused",
+  "provider_rejected",
+  "rate_limited",
+  "overloaded",
+  "unreachable",
+  "timeout",
+  "blocked",
+  "empty",
+  "interrupted",
+  "internal",
+]);
+export type TurnErrorCode = z.infer<typeof TurnErrorCode>;
+
+export const TurnState = z.object({
+  turnId: z.string(),
+  status: TurnStatus,
+  provider: z.string().nullable(),
+  modelId: z.string().nullable(),
+  errorCode: TurnErrorCode.nullable(),
+});
+export type TurnState = z.infer<typeof TurnState>;
+
+/** What the live stream of one conversation carries: pieces of the reply as it is written, and status changes. */
+export const TurnStreamItem = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("delta"), turnId: z.string(), n: z.number().int(), text: z.string() }),
+  z.object({ type: z.literal("status"), state: TurnState }),
+  /** The assistant is using one of the person's connected apps. */
+  z.object({
+    type: z.literal("tool"),
+    turnId: z.string(),
+    app: z.string(),
+    tool: z.string(),
+    status: z.enum(["running", "done", "failed"]),
+  }),
+]);
+export type TurnStreamItem = z.infer<typeof TurnStreamItem>;

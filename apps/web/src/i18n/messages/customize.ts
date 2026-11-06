@@ -3,42 +3,20 @@ import { defineMessages } from "../define.ts";
 export const customize = defineMessages(
   {
     "customize.title": "Customize",
-    "customize.soon": "Coming soon · {phase}",
-    "customize.phase1": "Phase 1",
-    "customize.phase2": "Phase 2",
-    "customize.phase3": "Phase 3",
     "customize.instructions.label": "Instructions",
     "customize.instructions.title": "Instructions for the agent",
     "customize.instructions.summary":
       "Rules the agent always reads: tone, organization context, what is required or forbidden.",
-    "customize.instructions.b1":
-      "Personal instructions (only for you) and workspace instructions (for all members).",
-    "customize.instructions.b2":
-      "Per-project instructions, such as client-specific terms or the team's code standards.",
-    "customize.instructions.b3": "Plain Markdown, can be imported from an existing AGENTS.md.",
     "customize.skills.label": "Skills",
     "customize.skills.title": "Skills",
     "customize.skills.summary":
       "Ready-made abilities the agent can call: for example 'write the weekly report' or 'write a PRD'. Uses the open SKILL.md format.",
-    "customize.skills.b1": "Create a skill through chat ('make a skill for…') or a simple form.",
-    "customize.skills.b2": "Import existing skills from another tool's skills folder.",
-    "customize.skills.b3": "Share with the team after admin review.",
     "customize.mcp.label": "Connections (MCP)",
     "customize.mcp.title": "Connections to other apps",
-    "customize.mcp.summary":
-      "Connect GitHub, Jira, Slack, Google Drive, internal databases and more through MCP — just click 'Connect' and sign in.",
-    "customize.mcp.b1":
-      "Sign in once (OAuth). Access keys are stored encrypted on the server and never sent to the agent.",
-    "customize.mcp.b2": "Admins can set up shared connections for the whole team.",
-    "customize.mcp.b3": "Every use is recorded in the audit log.",
     "customize.plugins.label": "Plugins",
     "customize.plugins.title": "Team plugins",
     "customize.plugins.summary":
       "Bundles of agents, skills, workflows and connections — for example the 'SDLC Agent' (analyst → architect → developer → QA → deploy with approval).",
-    "customize.plugins.b1": "Workspace plugin catalog: install with one click.",
-    "customize.plugins.b2":
-      "Publish your own plugin to the team; admins review the requested permissions in plain language.",
-    "customize.plugins.b3": "Versions, updates, and rollback.",
     "customize.noun.instruction": "instruction",
     "customize.noun.skill": "skill",
     "customize.noun.plugin": "plugin",
@@ -83,41 +61,20 @@ export const customize = defineMessages(
   },
   {
     "customize.title": "Kustomisasi",
-    "customize.soon": "Segera hadir · {phase}",
-    "customize.phase1": "Fase 1",
-    "customize.phase2": "Fase 2",
-    "customize.phase3": "Fase 3",
     "customize.instructions.label": "Instruksi",
     "customize.instructions.title": "Instruksi untuk agent",
     "customize.instructions.summary":
       "Aturan yang selalu dibaca agent: gaya bahasa, konteks organisasi, hal yang wajib atau dilarang.",
-    "customize.instructions.b1":
-      "Instruksi pribadi (hanya untukmu) dan instruksi ruang kerja (untuk semua anggota).",
-    "customize.instructions.b2": "Instruksi per proyek, misalnya istilah khusus klien atau standar kode tim.",
-    "customize.instructions.b3": "Format Markdown biasa, bisa diimpor dari AGENTS.md yang sudah ada.",
     "customize.skills.label": "Skill",
     "customize.skills.title": "Skill",
     "customize.skills.summary":
       "Keahlian siap pakai yang bisa dipanggil agent: misalnya ‘buat laporan mingguan’ atau ‘tulis PRD’. Memakai format SKILL.md yang terbuka.",
-    "customize.skills.b1": "Buat skill lewat chat (‘buatkan skill untuk…’) atau lewat formulir sederhana.",
-    "customize.skills.b2": "Impor skill yang sudah ada dari folder skills tool lain.",
-    "customize.skills.b3": "Bagikan ke tim setelah ditinjau admin.",
     "customize.mcp.label": "Koneksi (MCP)",
     "customize.mcp.title": "Koneksi ke aplikasi lain",
-    "customize.mcp.summary":
-      "Hubungkan GitHub, Jira, Slack, Google Drive, database internal, dan lainnya lewat MCP — cukup klik ‘Hubungkan’ lalu login.",
-    "customize.mcp.b1":
-      "Login sekali (OAuth). Kunci akses disimpan terenkripsi di server, tidak pernah dikirim ke agent.",
-    "customize.mcp.b2": "Admin bisa menyiapkan koneksi bersama untuk seluruh tim.",
-    "customize.mcp.b3": "Setiap pemakaian tercatat di log audit.",
     "customize.plugins.label": "Plugin",
     "customize.plugins.title": "Plugin tim",
     "customize.plugins.summary":
       "Paket berisi agent, skill, alur kerja dan koneksi — contohnya ‘SDLC Agent’ (analis → arsitek → developer → QA → deploy dengan persetujuan).",
-    "customize.plugins.b1": "Katalog plugin ruang kerja: pasang dengan satu klik.",
-    "customize.plugins.b2":
-      "Terbitkan plugin buatanmu ke tim; admin meninjau izin yang diminta dalam bahasa sederhana.",
-    "customize.plugins.b3": "Versi, pembaruan, dan rollback.",
     "customize.noun.instruction": "instruksi",
     "customize.noun.skill": "skill",
     "customize.noun.plugin": "plugin",

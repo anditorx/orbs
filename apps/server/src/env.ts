@@ -15,6 +15,30 @@ const EnvSchema = z.object({
   ORBS_UPLOAD_MAX_FILE_MB: z.coerce.number().positive().default(10),
   ORBS_PROJECT_MAX_MB: z.coerce.number().positive().default(500),
   ORBS_PROJECT_MAX_FILES: z.coerce.number().int().positive().default(20_000),
+  /**
+   * 32-byte key (base64) that encrypts connector credentials at rest, e.g. `openssl rand -base64 32`.
+   * Losing it makes stored connections unreadable; changing it forces everyone to reconnect.
+   */
+  ORBS_SECRET_KEY: z
+    .string()
+    .optional()
+    .refine(
+      (v) => !v || Buffer.from(v, "base64").length === 32,
+      "ORBS_SECRET_KEY must be 32 bytes, base64-encoded",
+    ),
+  /** Calls per minute one person may make through one connection (protects the provider's rate limit). */
+  ORBS_CONNECTOR_RATE_PER_MIN: z.coerce.number().int().positive().default(60),
+  /** Allow custom MCP servers on private/local addresses and plain http. Only for trusted self-hosted setups. */
+  ORBS_ALLOW_PRIVATE_MCP_URLS: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((v) => v === "true"),
+  /** Overrides the Gemini API address. Only for tests against a local mock; leave unset in production. */
+  ORBS_GEMINI_API_URL: z.string().url().optional(),
+  /** Overrides Asana's MCP endpoint. Only for tests against a local mock; leave unset in production. */
+  ORBS_ASANA_MCP_URL: z.string().url().optional(),
+  /** Overrides Asana's REST API address (token connections). Only for tests against a local mock. */
+  ORBS_ASANA_API_URL: z.string().url().optional(),
 });
 
 export const env = EnvSchema.parse(process.env);

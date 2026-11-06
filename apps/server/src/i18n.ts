@@ -68,12 +68,58 @@ const messages = {
     "usage.exceededWhere": ' for project "{project}"',
     "engine.auto": "Automatic",
     "engine.autoDesc": "Orbs picks the most economical model that is good enough for each request.",
-    "engine.noCatalog":
-      "No model is enabled for this organization yet. Ask a system administrator to enable one.",
+    "engine.noModels":
+      "No model has been added for this organization yet. Ask a system administrator to add one.",
+    "engine.noneUsable":
+      "None of the models can be used yet. Each one is waiting for something (a connection, billing confirmation, a price or being enabled); the reasons are listed below.",
     "engine.globalOff": "Disabled system-wide by an administrator.",
+    "engine.providerOff": "Its provider isn't connected right now.",
+    "engine.billingOff": "An administrator hasn't confirmed that the provider account is on a paid plan.",
+    "engine.unpricedOff": "An administrator hasn't set its price yet.",
+    "turn.busy": "Orbs is still answering the previous message. Wait for it or stop it first.",
+    "turn.rateLimited": "You are sending messages too fast. Try again in a moment.",
     "engine.orgOff": "Disabled for this organization by an administrator.",
     "engine.notAvailable": "That model isn't available for this organization.",
     "model.exists": "That model is already registered.",
+    "model.priceBelowInput":
+      "The input price can't be lower than the provider's price ({min} per 1M tokens), or using this model would cost more than it brings in.",
+    "model.priceBelowOutput":
+      "The output price can't be lower than the provider's price ({min} per 1M tokens), or using this model would cost more than it brings in.",
+    "connector.vault_missing":
+      "This installation has no encryption key (ORBS_SECRET_KEY), so connections can't be stored securely. Ask a system administrator.",
+    "connector.not_configured":
+      "This service isn't set up yet. Ask a system administrator to add its OAuth app.",
+    "connector.unknown_provider": "Unknown service.",
+    "connector.state_invalid": "The sign-in link is invalid or was already used. Start again.",
+    "connector.state_expired": "The sign-in took too long. Start again.",
+    "connector.wrong_user": "That sign-in was started by someone else. Start again from your own account.",
+    "connector.denied": "Access was not granted.",
+    "connector.issuer_mismatch":
+      "The response came from an unexpected authorization server and was rejected.",
+    "connector.exchange_failed":
+      "The service refused to complete the sign-in. Check the app's client ID, secret and redirect URI.",
+    "connector.needs_reauth": "The connection expired or was revoked. Connect again.",
+    "connector.secret_required": "Enter the client secret for this client ID.",
+    "connector.workspace_required": "Choose at least one workspace.",
+    "connector.token_rejected":
+      "The service refused this token. Check that it is copied completely and still valid.",
+    "connector.tool_blocked": "Orbs doesn't allow that action for this service.",
+    "connector.not_connected": "You haven't connected this service yet.",
+    "connector.upstream": "The service didn't respond as expected. Try again later.",
+    "provider.vault_missing":
+      "This installation has no encryption key (ORBS_SECRET_KEY), so credentials can't be stored securely.",
+    "provider.unknown_provider": "Unknown provider.",
+    "provider.key_required": "Enter the API key.",
+    "provider.not_configured": "This provider has no credentials yet.",
+    "provider.key_unreadable": "The stored key can't be read. Enter it again.",
+    "provider.activate_first": "Make the model active before enabling it.",
+    "provider.model_not_offered": "This provider's key doesn't offer that model.",
+    "provider.provider_unreachable":
+      "Couldn't read the model list from the provider. Check the connection and try again.",
+    "connector.rate_limited": "You're making requests too quickly. Wait a moment and try again.",
+    "connector.unsafe_url": "That address can't be used. It must be a public https address.",
+    "connector.limit_reached": "You've reached the limit of 10 custom servers. Remove one first.",
+    "connector.name_taken": "You already have a server with that name.",
     "model.notFound": "Model not found",
     "engine.modelDesc": "{provider} · max data: {maxDataClass}",
     "engine.agentDesc": "External coding agent through a harness adapter (Code mode).",
@@ -123,12 +169,56 @@ const messages = {
     "usage.exceededWhere": ' untuk proyek "{project}"',
     "engine.auto": "Otomatis",
     "engine.autoDesc": "Orbs memilih model yang paling hemat dan cukup pintar untuk tiap permintaan.",
-    "engine.noCatalog":
-      "Belum ada model yang aktif untuk organisasi ini. Minta administrator sistem mengaktifkannya.",
+    "engine.noModels":
+      "Belum ada model yang ditambahkan untuk organisasi ini. Minta administrator sistem menambahkannya.",
+    "engine.noneUsable":
+      "Belum ada model yang bisa dipakai. Masing-masing masih menunggu sesuatu (sambungan, konfirmasi tagihan, harga, atau diaktifkan); alasannya tertera di bawah.",
     "engine.globalOff": "Dinonaktifkan di seluruh sistem oleh administrator.",
+    "engine.providerOff": "Penyedianya sedang tidak tersambung.",
+    "engine.billingOff": "Administrator belum mengonfirmasi bahwa akun penyedia memakai paket berbayar.",
+    "engine.unpricedOff": "Administrator belum mengisi harganya.",
+    "turn.busy": "Orbs masih menjawab pesan sebelumnya. Tunggu atau hentikan dulu.",
+    "turn.rateLimited": "Kamu mengirim pesan terlalu cepat. Coba lagi sebentar lagi.",
     "engine.orgOff": "Dinonaktifkan untuk organisasi ini oleh administrator.",
     "engine.notAvailable": "Model itu tidak tersedia untuk organisasi ini.",
     "model.exists": "Model itu sudah terdaftar.",
+    "model.priceBelowInput":
+      "Harga input tidak boleh lebih rendah dari harga penyedia ({min} per 1 juta token), kalau tidak memakai model ini lebih mahal daripada pemasukannya.",
+    "model.priceBelowOutput":
+      "Harga output tidak boleh lebih rendah dari harga penyedia ({min} per 1 juta token), kalau tidak memakai model ini lebih mahal daripada pemasukannya.",
+    "connector.vault_missing":
+      "Instalasi ini belum punya kunci enkripsi (ORBS_SECRET_KEY), jadi koneksi tidak bisa disimpan dengan aman. Hubungi administrator sistem.",
+    "connector.not_configured":
+      "Layanan ini belum disiapkan. Minta administrator sistem menambahkan aplikasi OAuth-nya.",
+    "connector.unknown_provider": "Layanan tidak dikenal.",
+    "connector.state_invalid": "Tautan masuk tidak valid atau sudah dipakai. Mulai lagi.",
+    "connector.state_expired": "Proses masuk terlalu lama. Mulai lagi.",
+    "connector.wrong_user": "Proses masuk itu dimulai oleh orang lain. Mulai lagi dari akunmu sendiri.",
+    "connector.denied": "Akses tidak diberikan.",
+    "connector.issuer_mismatch": "Respons datang dari server otorisasi yang tidak dikenal dan ditolak.",
+    "connector.exchange_failed":
+      "Layanan menolak menyelesaikan proses masuk. Periksa client ID, secret, dan redirect URI aplikasinya.",
+    "connector.needs_reauth": "Koneksi sudah kedaluwarsa atau dicabut. Hubungkan lagi.",
+    "connector.secret_required": "Masukkan client secret untuk client ID ini.",
+    "connector.workspace_required": "Pilih setidaknya satu ruang kerja.",
+    "connector.token_rejected": "Layanan menolak token ini. Pastikan tersalin lengkap dan masih berlaku.",
+    "connector.tool_blocked": "Orbs tidak mengizinkan tindakan itu untuk layanan ini.",
+    "connector.not_connected": "Kamu belum menghubungkan layanan ini.",
+    "connector.upstream": "Layanan tidak merespons seperti seharusnya. Coba lagi nanti.",
+    "provider.vault_missing":
+      "Instalasi ini belum punya kunci enkripsi (ORBS_SECRET_KEY), jadi kredensial tidak bisa disimpan dengan aman.",
+    "provider.unknown_provider": "Penyedia tidak dikenal.",
+    "provider.key_required": "Masukkan API key.",
+    "provider.not_configured": "Penyedia ini belum punya kredensial.",
+    "provider.key_unreadable": "Key yang tersimpan tidak bisa dibaca. Masukkan lagi.",
+    "provider.activate_first": "Aktifkan model dulu sebelum meng-enable-nya.",
+    "provider.model_not_offered": "Key penyedia ini tidak menawarkan model itu.",
+    "provider.provider_unreachable":
+      "Daftar model dari penyedia tidak bisa dibaca. Periksa koneksi lalu coba lagi.",
+    "connector.rate_limited": "Permintaanmu terlalu cepat. Tunggu sebentar lalu coba lagi.",
+    "connector.unsafe_url": "Alamat itu tidak bisa dipakai. Harus berupa alamat https publik.",
+    "connector.limit_reached": "Kamu sudah mencapai batas 10 server kustom. Hapus salah satu dulu.",
+    "connector.name_taken": "Kamu sudah punya server dengan nama itu.",
     "model.notFound": "Model tidak ditemukan",
     "engine.modelDesc": "{provider} · data maks: {maxDataClass}",
     "engine.agentDesc": "Agent coding eksternal lewat harness adapter (mode Kode).",

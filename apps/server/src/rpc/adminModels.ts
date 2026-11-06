@@ -5,6 +5,9 @@ import { and, asc, eq, sql } from "drizzle-orm";
 import { audit } from "../audit.ts";
 import { db } from "../db.ts";
 import { t } from "../i18n.ts";
+import { organizationsPerModel } from "../models.ts";
+import { assertPriceNotBelowProvider } from "../pricing.ts";
+import { resolvePeriod, usageAcrossOrganizations } from "../usage.ts";
 import { systemAdmin } from "./base.ts";
 
 /**
@@ -38,6 +41,13 @@ function isDuplicate(error: unknown) {
   return code.code === "23505" || code.cause?.code === "23505";
 }
 
+export const adminModelUsageRouter = {
+  modelUsage: systemAdmin.admin.modelUsage.handler(async ({ input }) => {
+    const period = resolvePeriod(input.period);
+    return { period: period.key, ...(await usageAcrossOrganizations(period)) };
+  }),
+};
+
 export const adminModelsRouter = {
   list: systemAdmin.admin.models.list.handler(async (): Promise<AdminModel[]> => {
     const rows = await db
@@ -51,10 +61,12 @@ export const adminModelsRouter = {
         qualityScore: M.qualityScore,
         maxDataClass: M.maxDataClass,
         active: M.active,
-        orgCount: sql<number>`(select count(*)::int from "org_model" om where om.model_ref_id = "ai_model"."id")`,
+        listed: M.listed,
+        providerConnected: sql<boolean>`exists (select 1 from "model_provider" mp where mp.provider = "ai_model"."provider" and mp.status = 'connected')`,
       })
       .from(M)
       .orderBy(asc(M.provider), asc(M.displayName));
+    const orgsByModel = await organizationsPerModel();
     return rows.map((r) => ({
       id: r.id,
       provider: r.provider,
@@ -65,11 +77,14 @@ export const adminModelsRouter = {
       qualityScore: r.qualityScore,
       maxDataClass: r.maxDataClass,
       active: r.active,
-      orgCount: r.orgCount,
+      listed: r.listed,
+      providerConnected: r.providerConnected,
+      orgs: orgsByModel.get(r.id) ?? [],
     }));
   }),
 
   create: systemAdmin.admin.models.create.handler(async ({ context, input }) => {
+    assertPriceNotBelowProvider(input.provider, input.modelId, input.inputUsdPerMtok, input.outputUsdPerMtok);
     try {
       const [row] = await db
         .insert(M)
@@ -82,6 +97,7 @@ export const adminModelsRouter = {
           qualityScore: input.qualityScore,
           maxDataClass: input.maxDataClass,
           active: input.active,
+          listed: input.listed,
         })
         .returning({ id: M.id });
       if (!row) throw new ORPCError("INTERNAL_SERVER_ERROR");
@@ -102,6 +118,15 @@ export const adminModelsRouter = {
   update: systemAdmin.admin.models.update.handler(async ({ context, input }) => {
     const current = await requireModel(input.id);
     const p = input.patch;
+    // Only a change to a price (or to which model this is) is checked, so a model can still be switched on or off.
+    if (p.inputUsdPerMtok !== undefined || p.outputUsdPerMtok !== undefined || p.modelId !== undefined) {
+      assertPriceNotBelowProvider(
+        p.provider ?? current.provider,
+        p.modelId ?? current.modelId,
+        p.inputUsdPerMtok !== undefined ? p.inputUsdPerMtok : toNumber(current.inputUsdPerMtok),
+        p.outputUsdPerMtok !== undefined ? p.outputUsdPerMtok : toNumber(current.outputUsdPerMtok),
+      );
+    }
     try {
       await db
         .update(M)
@@ -114,6 +139,7 @@ export const adminModelsRouter = {
           ...(p.qualityScore !== undefined && { qualityScore: p.qualityScore }),
           ...(p.maxDataClass !== undefined && { maxDataClass: p.maxDataClass }),
           ...(p.active !== undefined && { active: p.active }),
+          ...(p.listed !== undefined && { listed: p.listed }),
         })
         .where(eq(M.id, current.id));
     } catch (error) {
@@ -158,15 +184,19 @@ export const adminModelsRouter = {
         displayName: M.displayName,
         maxDataClass: M.maxDataClass,
         active: M.active,
-        assignmentId: schema.orgModel.id,
+        providerConnected: sql<boolean>`exists (select 1 from "model_provider" mp where mp.provider = "ai_model"."provider" and mp.status = 'connected')`,
+        overrideId: schema.orgModel.id,
         enabled: schema.orgModel.enabled,
+        hidden: schema.orgModel.hidden,
       })
       .from(M)
       .leftJoin(
         schema.orgModel,
         and(eq(schema.orgModel.modelRefId, M.id), eq(schema.orgModel.orgId, input.orgId)),
       )
+      .where(eq(M.listed, true))
       .orderBy(asc(M.provider), asc(M.displayName));
+    // No override means "follow the global setting": visible, and usable when enabled system-wide.
     return rows.map((r) => ({
       modelId: r.modelId,
       provider: r.provider,
@@ -174,26 +204,26 @@ export const adminModelsRouter = {
       displayName: r.displayName,
       maxDataClass: r.maxDataClass,
       active: r.active,
-      assigned: r.assignmentId !== null,
-      enabled: r.assignmentId !== null ? Boolean(r.enabled) : false,
+      providerConnected: r.providerConnected,
+      assigned: !r.hidden,
+      enabled: r.hidden ? false : (r.enabled ?? true),
     }));
   }),
 
   setForOrg: systemAdmin.admin.models.setForOrg.handler(async ({ context, input }) => {
     await requireOrg(input.orgId);
     const model = await requireModel(input.modelId);
-    if (input.assigned) {
-      await db
-        .insert(schema.orgModel)
-        .values({ orgId: input.orgId, modelRefId: model.id, enabled: input.enabled })
-        .onConflictDoUpdate({
-          target: [schema.orgModel.orgId, schema.orgModel.modelRefId],
-          set: { enabled: input.enabled },
-        });
-    } else {
+    if (input.assigned && input.enabled) {
+      // Back to the default: no override needed.
       await db
         .delete(schema.orgModel)
         .where(and(eq(schema.orgModel.orgId, input.orgId), eq(schema.orgModel.modelRefId, model.id)));
+    } else {
+      const values = { enabled: input.assigned ? input.enabled : true, hidden: !input.assigned };
+      await db
+        .insert(schema.orgModel)
+        .values({ orgId: input.orgId, modelRefId: model.id, ...values })
+        .onConflictDoUpdate({ target: [schema.orgModel.orgId, schema.orgModel.modelRefId], set: values });
     }
     await audit({
       orgId: input.orgId,
