@@ -1,0 +1,13 @@
+#!/bin/sh
+# Blocks a commit that contains something that looks like a secret. Enable once with:
+#   git config core.hooksPath .githooks
+if ! command -v node >/dev/null 2>&1; then
+  echo "pre-commit: Node is not installed, so the secret scan was skipped." >&2
+  exit 0
+fi
+# The scanner needs a current Node (this project does too); an old one can't even parse it.
+if ! node -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 18 ? 0 : 1)' 2>/dev/null; then
+  echo "pre-commit: Node $(node -v) is too old to run the secret scan (needs 18+), so it was skipped. Run: pnpm check:secrets" >&2
+  exit 0
+fi
+exec node scripts/check-secrets.mjs

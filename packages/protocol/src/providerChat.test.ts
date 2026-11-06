@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { emptyProviderChat, redactKey, replyToProviderChat } from "./providerChat.ts";
 
 const PROVIDERS = [{ id: "gemini", name: "Gemini" }];
-const KEY = "AIzaSyA1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q";
+const KEY = "AIzaSyA1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q"; // secret-scan:allow (made up)
 const say = (state: ReturnType<typeof emptyProviderChat>, text: string) =>
   replyToProviderChat(state, text, PROVIDERS);
 

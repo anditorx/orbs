@@ -446,6 +446,14 @@ Security is a core requirement, not an afterthought. Current safeguards include:
   returned by the API, and sign-in uses PKCE, a single-use `state` and issuer checking.
 - Uploaded paths are normalized and confined to the project directory; secret files such as
   `.env` and private keys are never accepted.
+- The repository is public, so nothing secret may be committed: real `.env` files, keys and certificates are
+  git-ignored, and `pnpm check:secrets` scans every tracked file. A pre-commit hook runs the same scan on what is
+  staged (enable it once with `git config core.hooksPath .githooks`). A line that is deliberately fake carries
+  `secret-scan:allow`. If a real key is ever committed, treat it as leaked: revoke it first, then clean the history.
+- The server refuses to start in production while `BETTER_AUTH_SECRET` is still the placeholder from `.env.example`
+  (and warns about it in development).
+- Provider API keys, OAuth client secrets and tokens are never sent back to the browser (only the last four
+  characters of a stored key or secret), and error messages never contain them.
 
 If you discover a vulnerability, please **do not open a public issue**. Report it privately via
 [GitHub Security Advisories](https://github.com/anditorx/orbs/security/advisories/new).

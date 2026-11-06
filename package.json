@@ -1,7 +1,7 @@
 {
   "name": "orbs",
   "private": true,
-  "description": "Orbs — open-source, self-hostable AI agent workspace for teams (Work & Code modes).",
+  "description": "Orbs \u2014 open-source, self-hostable AI agent workspace for teams (Work & Code modes).",
   "license": "AGPL-3.0-only",
   "packageManager": "pnpm@12.16.1",
   "engines": {
@@ -17,7 +17,8 @@
     "format": "biome format --write .",
     "db:up": "docker compose up -d postgres",
     "db:generate": "pnpm --filter @orbs/db generate",
-    "db:migrate": "pnpm --filter @orbs/db migrate"
+    "db:migrate": "pnpm --filter @orbs/db migrate",
+    "check:secrets": "node scripts/check-secrets.mjs --all"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.6.5",
