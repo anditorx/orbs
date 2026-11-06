@@ -1,18 +1,23 @@
-import type { BudgetStatus, TeamUsageRow, UsageByModel, UsageByProject } from "@orbs/protocol";
+import type {
+  BudgetStatus,
+  TeamUsageRow,
+  UsageByModel,
+  UsageByProject,
+  UsageByProvider,
+} from "@orbs/protocol";
 import { isOrgAdmin, periodOf } from "@orbs/protocol";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { BarChart3, RotateCcw, Trash2, Users } from "lucide-react";
 import { type FormEvent, type ReactNode, useState } from "react";
+import { Money } from "../components/Money.tsx";
 import { Button } from "../components/ui/button.tsx";
 import { ConfirmDialog } from "../components/ui/confirm-dialog.tsx";
 import { Input } from "../components/ui/input.tsx";
-import { getLang, localeOf, t as tNow, useT } from "../i18n/index.ts";
+import { t as tNow, useT } from "../i18n/index.ts";
+import { idr, num, usd } from "../lib/money.ts";
 import { orpc } from "../lib/rpc.ts";
 import { cn } from "../lib/utils.ts";
 
-// Numbers follow the interface language (1,234 in English, 1.234 in Indonesian).
-const num = (n: number) => Math.round(n).toLocaleString(localeOf(getLang()));
-const idr = (n: number) => `Rp ${num(n)}`;
 const unitValue = (unit: "tokens" | "idr", n: number) =>
   unit === "idr" ? idr(n) : `${num(n)} ${tNow("usage.tokenWord")}`;
 
@@ -106,7 +111,30 @@ function ProjectTable({ rows }: { rows: UsageByProject[] }) {
           </td>
           <td className="px-4 py-2 text-right">{num(r.requests)}</td>
           <td className="px-4 py-2 text-right">{num(r.totalTokens)}</td>
-          <td className="px-4 py-2 text-right">{idr(r.costIdr)}</td>
+          <td className="px-4 py-2 text-right">
+            <Money micro={r.costMicroUsd} rupiah={r.costIdr} />
+          </td>
+        </tr>
+      ))}
+    </Table>
+  );
+}
+
+function ProviderTable({ rows }: { rows: UsageByProvider[] }) {
+  const t = useT();
+  if (rows.length === 0) return <Empty text={t("common.noUsage")} />;
+  return (
+    <Table
+      head={[t("usage.col.provider"), t("usage.col.requests"), t("usage.col.tokens"), t("usage.col.cost")]}
+    >
+      {rows.map((r) => (
+        <tr key={r.provider} className="border-b border-border last:border-0">
+          <td className="px-4 py-2 font-medium">{r.provider}</td>
+          <td className="px-4 py-2 text-right">{num(r.requests)}</td>
+          <td className="px-4 py-2 text-right">{num(r.totalTokens)}</td>
+          <td className="px-4 py-2 text-right">
+            <Money micro={r.costMicroUsd} rupiah={r.costIdr} />
+          </td>
         </tr>
       ))}
     </Table>
@@ -125,14 +153,20 @@ function ModelTable({ rows }: { rows: UsageByModel[] }) {
           </td>
           <td className="px-4 py-2 text-right">{num(r.requests)}</td>
           <td className="px-4 py-2 text-right">{num(r.totalTokens)}</td>
-          <td className="px-4 py-2 text-right">{idr(r.costIdr)}</td>
+          <td className="px-4 py-2 text-right">
+            <Money micro={r.costMicroUsd} rupiah={r.costIdr} />
+          </td>
         </tr>
       ))}
     </Table>
   );
 }
 
-function DayBars({ rows }: { rows: Array<{ day: string; totalTokens: number; costIdr: number }> }) {
+function DayBars({
+  rows,
+}: {
+  rows: Array<{ day: string; totalTokens: number; costMicroUsd: number; costIdr: number }>;
+}) {
   const t = useT();
   if (rows.length === 0) return null;
   const max = Math.max(...rows.map((r) => r.totalTokens), 1);
@@ -142,7 +176,7 @@ function DayBars({ rows }: { rows: Array<{ day: string; totalTokens: number; cos
         {rows.map((r) => (
           <div
             key={r.day}
-            title={`${r.day}: ${num(r.totalTokens)} ${t("usage.tokenWord")} · ${idr(r.costIdr)}`}
+            title={`${r.day}: ${num(r.totalTokens)} ${t("usage.tokenWord")} · ${usd(r.costMicroUsd)} · ${idr(r.costIdr)}`}
             className="min-w-1 flex-1 rounded-t bg-primary/70"
             style={{ height: `${Math.max(4, (r.totalTokens / max) * 100)}%` }}
           />
@@ -161,7 +195,7 @@ function MyUsage({ period }: { period: string }) {
   return (
     <div className="space-y-6">
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Stat label={t("usage.totalCost")} value={idr(tot.costIdr)} />
+        <Stat label={t("usage.totalCost")} value={idr(tot.costIdr)} hint={usd(tot.costMicroUsd)} />
         <Stat
           label={t("usage.totalTokens")}
           value={num(tot.totalTokens)}
@@ -194,6 +228,9 @@ function MyUsage({ period }: { period: string }) {
       <Section title={t("usage.byProject")}>
         <ProjectTable rows={data.byProject} />
       </Section>
+      <Section title={t("usage.byProvider")}>
+        <ProviderTable rows={data.byProvider} />
+      </Section>
       <Section title={t("usage.byModel")}>
         <ModelTable rows={data.byModel} />
       </Section>
@@ -215,8 +252,8 @@ function UserDetail({ userId, period, onClose }: { userId: string; period: strin
         <div>
           <h3 className="font-semibold">{data.user.name}</h3>
           <p className="text-xs text-muted-foreground">
-            {data.user.email} · {idr(data.totals.costIdr)} · {num(data.totals.totalTokens)}{" "}
-            {t("usage.tokenWord")}
+            {data.user.email} · {usd(data.totals.costMicroUsd)} · {idr(data.totals.costIdr)} ·{" "}
+            {num(data.totals.totalTokens)} {t("usage.tokenWord")}
           </p>
         </div>
         <Button variant="secondary" onClick={onClose}>
@@ -229,6 +266,10 @@ function UserDetail({ userId, period, onClose }: { userId: string; period: strin
       {data.budgets.map((b) => (
         <BudgetBar key={b.id} b={b} />
       ))}
+      <Section title={t("usage.daily")}>
+        <DayBars rows={data.byDay} />
+        {data.byDay.length === 0 && <Empty text={t("common.noUsage")} />}
+      </Section>
       <Section title={t("usage.detail.forProject")}>
         <ProjectTable rows={data.byProject} />
       </Section>
@@ -255,11 +296,16 @@ function UserDetail({ userId, period, onClose }: { userId: string; period: strin
                 </td>
                 <td className="px-4 py-2 text-right">{num(r.requests)}</td>
                 <td className="px-4 py-2 text-right">{num(r.totalTokens)}</td>
-                <td className="px-4 py-2 text-right">{idr(r.costIdr)}</td>
+                <td className="px-4 py-2 text-right">
+                  <Money micro={r.costMicroUsd} rupiah={r.costIdr} />
+                </td>
               </tr>
             ))}
           </Table>
         )}
+      </Section>
+      <Section title={t("usage.byProvider")}>
+        <ProviderTable rows={data.byProvider} />
       </Section>
       <Section title={t("usage.detail.models")}>
         <ModelTable rows={data.byModel} />
@@ -467,7 +513,11 @@ function TeamUsage({ period }: { period: string }) {
   return (
     <div className="space-y-6">
       <div className="grid gap-3 sm:grid-cols-3">
-        <Stat label={t("usage.teamCost")} value={idr(data.totals.costIdr)} />
+        <Stat
+          label={t("usage.teamCost")}
+          value={idr(data.totals.costIdr)}
+          hint={usd(data.totals.costMicroUsd)}
+        />
         <Stat label={t("usage.teamTokens")} value={num(data.totals.totalTokens)} />
         <Stat label={t("usage.requests")} value={num(data.totals.requests)} />
       </div>
@@ -517,7 +567,9 @@ function TeamUsage({ period }: { period: string }) {
               </td>
               <td className="px-4 py-2 text-right">{num(r.requests)}</td>
               <td className="px-4 py-2 text-right">{num(r.totalTokens)}</td>
-              <td className="px-4 py-2 text-right">{idr(r.costIdr)}</td>
+              <td className="px-4 py-2 text-right">
+                <Money micro={r.costMicroUsd} rupiah={r.costIdr} />
+              </td>
               <td className="px-4 py-2 text-right">{r.sharePercent}%</td>
               <td className={cn("px-4 py-2 text-right", b?.exceeded && "text-destructive")}>
                 {b

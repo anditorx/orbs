@@ -284,7 +284,10 @@ export const aiModel = pgTable(
     maxDataClass: text("max_data_class", { enum: ["public", "internal", "confidential"] })
       .notNull()
       .default("internal"),
+    /** "Enabled": whether the model can be used / chosen. Off = shown greyed out. */
     active: boolean("active").notNull().default(true),
+    /** "Active": whether the model appears in the model lists at all. */
+    listed: boolean("listed").notNull().default(true),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -292,8 +295,9 @@ export const aiModel = pgTable(
 );
 
 /**
- * Which registry models an organization sees. A row means the model APPEARS for that organization;
- * `enabled` says whether it can be used there. No row means the model is not offered at all.
+ * Per-organization overrides of the registry. Every listed model appears in every organization by default;
+ * a row changes that for one organization: `hidden` removes the model from its list, `enabled = false`
+ * keeps it visible but not selectable. No row means "follow the global setting".
  */
 export const orgModel = pgTable(
   "org_model",
@@ -304,7 +308,199 @@ export const orgModel = pgTable(
       .notNull()
       .references(() => aiModel.id, { onDelete: "cascade" }),
     enabled: boolean("enabled").notNull().default(true),
+    /** This organization doesn't see the model at all (it appears everywhere else by default). */
+    hidden: boolean("hidden").notNull().default(false),
     createdAt: createdAt(),
   },
   (t) => [uniqueIndex("org_model_uq").on(t.orgId, t.modelRefId)],
+);
+
+// ---- External connections (MCP connectors) ----
+
+/**
+ * OAuth app credentials for a connector, set once per installation by a system administrator.
+ * The secret is encrypted at rest (see connectors/vault.ts) and is never returned by the API.
+ */
+export const connectorApp = pgTable(
+  "connector_app",
+  {
+    id: id(),
+    provider: text("provider").notNull(),
+    clientId: text("client_id").notNull(),
+    clientSecretEnc: text("client_secret_enc").notNull(),
+    createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [uniqueIndex("connector_app_provider_uq").on(t.provider)],
+);
+
+/**
+ * A person's own OAuth app for a connector. When present it is used instead of the installation's app,
+ * so people can register their own app without waiting for a system administrator.
+ */
+export const userConnectorApp = pgTable(
+  "user_connector_app",
+  {
+    id: id(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    provider: text("provider").notNull(),
+    clientId: text("client_id").notNull(),
+    clientSecretEnc: text("client_secret_enc").notNull(),
+    /** Labels the person gave their app, to recognize it later. Not sent to the provider. */
+    appName: text("app_name"),
+    description: text("description"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [uniqueIndex("user_connector_app_uq").on(t.userId, t.provider)],
+);
+
+/**
+ * One user's authorized connection to an external service. Tokens are encrypted with the vault key,
+ * bound to (organization, user, provider), and never leave the server.
+ */
+export const connection = pgTable(
+  "connection",
+  {
+    id: id(),
+    orgId: orgId(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    provider: text("provider").notNull(),
+    status: text("status", { enum: ["active", "needs_reauth"] })
+      .notNull()
+      .default("active"),
+    accountName: text("account_name"),
+    accountEmail: text("account_email"),
+    workspaceName: text("workspace_name"),
+    accessTokenEnc: text("access_token_enc").notNull(),
+    refreshTokenEnc: text("refresh_token_enc"),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    /** Authorization server issuer that issued these credentials; never reused with another issuer. */
+    issuer: text("issuer"),
+    /** OAuth `resource` the tokens were requested for. */
+    resource: text("resource"),
+    /**
+     * The workspaces of the account the person allowed the assistant to use, by id and name. Null means they never
+     * chose, so every workspace the account has is used. Only a token connection can span several workspaces.
+     */
+    allowedWorkspaces: jsonb("allowed_workspaces").$type<Array<{ gid: string; name: string }>>(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+  },
+  (t) => [uniqueIndex("connection_uq").on(t.orgId, t.userId, t.provider)],
+);
+
+/** Short-lived record of an OAuth authorization in progress (CSRF `state` + PKCE verifier). Single use. */
+export const oauthPending = pgTable("oauth_pending", {
+  state: text("state").primaryKey(),
+  orgId: orgId(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
+  provider: text("provider").notNull(),
+  codeVerifierEnc: text("code_verifier_enc").notNull(),
+  redirectUri: text("redirect_uri").notNull(),
+  issuer: text("issuer"),
+  resource: text("resource"),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  createdAt: createdAt(),
+});
+
+/**
+ * An MCP server a person added themselves (any address, not one of Orbs' built-in services).
+ * It belongs to that person alone. The optional bearer token is encrypted, and `allowedTools` lists the
+ * tools the person explicitly switched on: nothing a custom server offers runs by default.
+ */
+export const customMcpServer = pgTable(
+  "custom_mcp_server",
+  {
+    id: id(),
+    orgId: orgId(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    url: text("url").notNull(),
+    tokenEnc: text("token_enc"),
+    allowedTools: jsonb("allowed_tools").notNull().default(sql`'[]'::jsonb`).$type<string[]>(),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("custom_mcp_server_name_uq").on(t.orgId, t.userId, t.name)],
+);
+
+/**
+ * Credentials for an AI model provider (for example Gemini), set once per installation by a system
+ * administrator. The API key is encrypted at rest and never returned by the API.
+ */
+export const modelProvider = pgTable(
+  "model_provider",
+  {
+    id: id(),
+    provider: text("provider").notNull(),
+    name: text("name").notNull(),
+    apiKeyEnc: text("api_key_enc").notNull(),
+    /** Last four characters of the key, so an admin can tell which key is stored. */
+    keyHint: text("key_hint").notNull(),
+    projectName: text("project_name"),
+    projectNumber: text("project_number"),
+    /** "connected" after a successful check, "failed" after a rejected one. */
+    status: text("status").notNull().default("failed").$type<"connected" | "failed">(),
+    lastError: text("last_error"),
+    lastCheckedAt: timestamp("last_checked_at", { withTimezone: true }),
+    /**
+     * The administrator states the provider account is on a paid, billing-enabled plan. Free plans may use prompts
+     * to improve the provider's products, so models stay unavailable for chat until this is confirmed.
+     */
+    billingConfirmed: boolean("billing_confirmed").notNull().default(false),
+    /** Consecutive background checks that failed for a passing reason (network, timeout, provider overload). */
+    failStreak: integer("fail_streak").notNull().default(0),
+    createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [uniqueIndex("model_provider_provider_uq").on(t.provider)],
+);
+
+/**
+ * One reply the assistant owes for a message. It is the durable queue the agent worker takes work from, and the
+ * record of what happened to it, so a restart can't leave a conversation stuck "typing" forever.
+ */
+export const turn = pgTable(
+  "turn",
+  {
+    id: id(),
+    orgId: orgId(),
+    threadId: text("thread_id")
+      .notNull()
+      .references(() => thread.id, { onDelete: "cascade" }),
+    userId: text("user_id").notNull(),
+    status: text("status", { enum: ["queued", "running", "completed", "failed", "cancelled"] })
+      .notNull()
+      .default("queued"),
+    /** What the person asked for when sending ("Automatic" or one model). */
+    engine: jsonb("engine").notNull(),
+    /** The model that actually answered (resolved when the turn starts). */
+    provider: text("provider"),
+    modelId: text("model_id"),
+    errorCode: text("error_code"),
+    cancelRequested: boolean("cancel_requested").notNull().default(false),
+    inputTokens: bigint("input_tokens", { mode: "number" }).notNull().default(0),
+    outputTokens: bigint("output_tokens", { mode: "number" }).notNull().default(0),
+    createdAt: createdAt(),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    /** Touched while the worker is alive; a running turn that stops beating is declared interrupted. */
+    heartbeatAt: timestamp("heartbeat_at", { withTimezone: true }),
+    endedAt: timestamp("ended_at", { withTimezone: true }),
+  },
+  (t) => [
+    index("turn_thread_created_idx").on(t.threadId, t.createdAt),
+    index("turn_status_idx").on(t.status, t.createdAt),
+  ],
 );

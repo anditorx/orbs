@@ -3,7 +3,7 @@ import { defineMessages } from "../define.ts";
 export const usage = defineMessages(
   {
     "usage.title": "Usage & cost",
-    "usage.subtitle": "Tokens and cost (Rupiah) per month, WIB time zone.",
+    "usage.subtitle": "Tokens and cost (US dollars and Rupiah) per month, WIB time zone.",
     "usage.tab.mine": "My usage",
     "usage.tab.team": "Team",
     "usage.tab.budgets": "Limits & rate",
@@ -24,6 +24,8 @@ export const usage = defineMessages(
     "usage.col.tokens": "Tokens",
     "usage.col.cost": "Cost",
     "usage.col.model": "Model",
+    "usage.col.provider": "Provider",
+    "usage.byProvider": "By provider",
     "usage.col.conversation": "Conversation",
     "usage.col.member": "# Member",
     "usage.col.share": "Share",
@@ -84,7 +86,7 @@ export const usage = defineMessages(
   },
   {
     "usage.title": "Pemakaian & biaya",
-    "usage.subtitle": "Token dan biaya (Rupiah) per bulan, zona waktu WIB.",
+    "usage.subtitle": "Token dan biaya (dolar AS dan Rupiah) per bulan, zona waktu WIB.",
     "usage.tab.mine": "Pemakaian saya",
     "usage.tab.team": "Tim",
     "usage.tab.budgets": "Batas & kurs",
@@ -105,6 +107,8 @@ export const usage = defineMessages(
     "usage.col.tokens": "Token",
     "usage.col.cost": "Biaya",
     "usage.col.model": "Model",
+    "usage.col.provider": "Penyedia",
+    "usage.byProvider": "Per penyedia",
     "usage.col.conversation": "Percakapan",
     "usage.col.member": "# Anggota",
     "usage.col.share": "Porsi",

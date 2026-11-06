@@ -7,9 +7,20 @@ import {
   ORG_ROLE,
   type OrbsEvent,
   type Thread,
+  type TurnStreamItem,
 } from "@orbs/protocol";
 import { ORPCError } from "@orpc/server";
 import { and, desc, eq } from "drizzle-orm";
+import { streamBus } from "../agent/streamBus.ts";
+import {
+  activeTurn,
+  cancelTurn,
+  enqueueTurn,
+  ownsThread,
+  TurnRefused,
+  takeMessageSlot,
+  wake,
+} from "../agent/turns.ts";
 import { audit } from "../audit.ts";
 import { db } from "../db.ts";
 import { appendEvent, createEventVisibility, eventBus, listVisibleEvents } from "../events.ts";
@@ -18,6 +29,7 @@ import { isModelAvailable, modelsForOrg } from "../models.ts";
 import { assertWithinBudget } from "../usage.ts";
 import { adminRouter } from "./admin.ts";
 import { authed, inOrg, os } from "./base.ts";
+import { connectionsRouter } from "./connections.ts";
 import { customizationsRouter } from "./customizations.ts";
 import { dropPins, pinnedIds, pinsRouter } from "./pins.ts";
 import { projectsRouter } from "./projects.ts";
@@ -80,6 +92,8 @@ export const router = os.router({
 
   pins: pinsRouter,
 
+  connections: connectionsRouter,
+
   usage: usageRouter,
 
   customizations: customizationsRouter,
@@ -94,7 +108,9 @@ export const router = os.router({
           label: t("engine.auto"),
           description: t("engine.autoDesc"),
           available: usable.length > 0,
-          ...(usable.length > 0 ? {} : { reason: t("engine.noCatalog") }),
+          ...(usable.length > 0
+            ? {}
+            : { reason: t(models.length === 0 ? "engine.noModels" : "engine.noneUsable") }),
         },
         ...models.map(
           (m): EngineOption => ({
@@ -103,7 +119,21 @@ export const router = os.router({
             description: t("engine.modelDesc", { provider: m.provider, maxDataClass: m.maxDataClass }),
             available: m.available,
             // Listed but not usable: shown greyed out with the reason.
-            ...(m.off ? { reason: t(m.off === "global" ? "engine.globalOff" : "engine.orgOff") } : {}),
+            ...(m.off
+              ? {
+                  reason: t(
+                    m.off === "provider"
+                      ? "engine.providerOff"
+                      : m.off === "billing"
+                        ? "engine.billingOff"
+                        : m.off === "unpriced"
+                          ? "engine.unpricedOff"
+                          : m.off === "global"
+                            ? "engine.globalOff"
+                            : "engine.orgOff",
+                  ),
+                }
+              : {}),
           }),
         ),
         ...EXTERNAL_AGENTS.map(
@@ -178,6 +208,15 @@ export const router = os.router({
     }),
 
     postMessage: inOrg.threads.postMessage.handler(async ({ context, input }) => {
+      if (input.engine?.kind === "agent") {
+        throw new ORPCError("BAD_REQUEST", { message: t("engine.notAvailable") });
+      }
+      if (input.engine?.kind === "model") {
+        const { provider, modelId } = input.engine;
+        if (!(await isModelAvailable(context.orgId, provider, modelId))) {
+          throw new ORPCError("BAD_REQUEST", { message: t("engine.notAvailable") });
+        }
+      }
       const [thread] = await db
         .select({ projectId: schema.thread.projectId })
         .from(schema.thread)
@@ -192,10 +231,15 @@ export const router = os.router({
       if (!thread) throw new ORPCError("NOT_FOUND", { message: t("common.threadNotFound") });
       // Refuse new work once a monthly budget (global or for this project) is used up.
       await assertWithinBudget(context.orgId, context.user.id, thread.projectId);
-      return db.transaction(async (tx) => {
+      try {
+        takeMessageSlot(context.user.id);
+      } catch (error) {
+        throw turnRefusal(error);
+      }
+      const result = await db.transaction(async (tx) => {
         const [row] = await tx
           .update(schema.thread)
-          .set({ updatedAt: new Date() })
+          .set({ updatedAt: new Date(), ...(input.engine && { engine: input.engine }) })
           .where(
             and(
               eq(schema.thread.id, input.threadId),
@@ -203,7 +247,7 @@ export const router = os.router({
               eq(schema.thread.createdBy, context.user.id),
             ),
           )
-          .returning({ id: schema.thread.id });
+          .returning({ id: schema.thread.id, engine: schema.thread.engine });
         if (!row) throw new ORPCError("NOT_FOUND", { message: t("common.threadNotFound") });
         const event = await appendEvent(
           {
@@ -216,8 +260,21 @@ export const router = os.router({
           },
           tx,
         );
-        return { eventId: event.id, seq: event.seq };
+        let turnId: string;
+        try {
+          turnId = await enqueueTurn(tx, {
+            orgId: context.orgId,
+            threadId: row.id,
+            userId: context.user.id,
+            engine: row.engine as Engine,
+          });
+        } catch (error) {
+          throw turnRefusal(error);
+        }
+        return { eventId: event.id, seq: event.seq, turnId };
       });
+      wake();
+      return result;
     }),
 
     rename: inOrg.threads.rename.handler(async ({ context, input }) => {
@@ -301,6 +358,54 @@ export const router = os.router({
     }),
   },
 
+  turns: {
+    active: inOrg.turns.active.handler(({ context, input }) =>
+      activeTurn(context.orgId, input.threadId, context.user.id),
+    ),
+
+    cancel: inOrg.turns.cancel.handler(async ({ context, input }) => {
+      if (!(await cancelTurn(context.orgId, input.threadId, context.user.id))) {
+        throw new ORPCError("NOT_FOUND", { message: t("common.threadNotFound") });
+      }
+      return { ok: true as const };
+    }),
+
+    /** Pieces of the reply as it is written, and status changes, for one conversation. Only its owner may watch. */
+    watch: inOrg.turns.watch.handler(async function* ({ context, input, signal }) {
+      if (!(await ownsThread(context.orgId, input.threadId, context.user.id))) {
+        throw new ORPCError("NOT_FOUND", { message: t("common.threadNotFound") });
+      }
+      const queue: TurnStreamItem[] = [];
+      let wakeUp: (() => void) | undefined;
+      const unsubscribe = streamBus.subscribe((threadId, item) => {
+        if (threadId !== input.threadId) return;
+        queue.push(item);
+        wakeUp?.();
+      });
+      const onAbort = () => wakeUp?.();
+      signal?.addEventListener("abort", onAbort, { once: true });
+      try {
+        // Subscribed first, so nothing slips between this snapshot and the live items.
+        const current = await activeTurn(context.orgId, input.threadId, context.user.id);
+        if (current) yield { type: "status" as const, state: current };
+        while (!signal?.aborted) {
+          const next = queue.shift();
+          if (next) {
+            yield next;
+            continue;
+          }
+          await new Promise<void>((resolve) => {
+            wakeUp = resolve;
+          });
+          wakeUp = undefined;
+        }
+      } finally {
+        signal?.removeEventListener("abort", onAbort);
+        unsubscribe();
+      }
+    }),
+  },
+
   events: {
     list: inOrg.events.list.handler(({ context, input }) =>
       listVisibleEvents(context.orgId, context.user.id, input.streamType, input.streamId, input.afterSeq),
@@ -342,3 +447,11 @@ export const router = os.router({
 });
 
 export type AppRouter = typeof router;
+
+/** A refused message as an error the person can read; anything else passes through. */
+function turnRefusal(error: unknown): unknown {
+  if (!(error instanceof TurnRefused)) return error;
+  return error.code === "busy"
+    ? new ORPCError("CONFLICT", { message: t("turn.busy") })
+    : new ORPCError("TOO_MANY_REQUESTS", { message: t("turn.rateLimited") });
+}

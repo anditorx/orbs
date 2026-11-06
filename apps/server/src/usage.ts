@@ -12,6 +12,7 @@ import {
   type UsageByDay,
   type UsageByModel,
   type UsageByProject,
+  type UsageByProvider,
   type UsageByThread,
   type UsageTotals,
 } from "@orbs/protocol";
@@ -88,6 +89,7 @@ export async function recordUsage(record: UsageRecord) {
 // Cached tokens are a subset of input and reasoning tokens a subset of output, so neither is added again.
 const TOTAL_TOKENS = sql<number>`coalesce(sum(${L.inputTokens} + ${L.outputTokens}), 0)::float8`;
 const COST_IDR = sql<number>`coalesce(sum(${L.costIdr}), 0)::float8`;
+const COST_USD = sql<number>`coalesce(sum(${L.costMicroUsd}), 0)::float8`;
 const REQUESTS = sql<number>`count(*)::int`;
 
 function scope(
@@ -121,6 +123,7 @@ export async function totalsFor(
       cachedInputTokens: sql<number>`coalesce(sum(${L.cachedInputTokens}), 0)::float8`,
       outputTokens: sql<number>`coalesce(sum(${L.outputTokens}), 0)::float8`,
       reasoningTokens: sql<number>`coalesce(sum(${L.reasoningTokens}), 0)::float8`,
+      costMicroUsd: COST_USD,
       costIdr: COST_IDR,
     })
     .from(L)
@@ -131,6 +134,7 @@ export async function totalsFor(
     cachedInputTokens: 0,
     outputTokens: 0,
     reasoningTokens: 0,
+    costMicroUsd: 0,
     costIdr: 0,
   };
   return { ...t, totalTokens: t.inputTokens + t.outputTokens };
@@ -143,7 +147,13 @@ export async function byProject(
 ): Promise<UsageByProject[]> {
   const [rows, names] = await Promise.all([
     db
-      .select({ projectId: L.projectId, requests: REQUESTS, totalTokens: TOTAL_TOKENS, costIdr: COST_IDR })
+      .select({
+        projectId: L.projectId,
+        requests: REQUESTS,
+        totalTokens: TOTAL_TOKENS,
+        costMicroUsd: COST_USD,
+        costIdr: COST_IDR,
+      })
       .from(L)
       .where(scope(orgId, period, f))
       .groupBy(L.projectId)
@@ -168,12 +178,69 @@ export async function byModel(
       modelId: L.modelId,
       requests: REQUESTS,
       totalTokens: TOTAL_TOKENS,
+      costMicroUsd: COST_USD,
       costIdr: COST_IDR,
     })
     .from(L)
     .where(scope(orgId, period, f))
     .groupBy(L.provider, L.modelId)
     .orderBy(sql`5 desc`);
+}
+
+/** The same usage rolled up per provider, so "how much did Gemini cost" is one row. */
+export async function byProvider(
+  orgId: string,
+  period: { start: Date; end: Date },
+  f: { userId?: string } = {},
+): Promise<UsageByProvider[]> {
+  return db
+    .select({
+      provider: L.provider,
+      requests: REQUESTS,
+      totalTokens: TOTAL_TOKENS,
+      costMicroUsd: COST_USD,
+      costIdr: COST_IDR,
+    })
+    .from(L)
+    .where(scope(orgId, period, f))
+    .groupBy(L.provider)
+    .orderBy(sql`4 desc`);
+}
+
+/** Across every organization, for system administrators: cost per provider and per model, and how many people used each. */
+export async function usageAcrossOrganizations(period: { start: Date; end: Date }) {
+  const range = and(gte(L.createdAt, period.start), lt(L.createdAt, period.end));
+  const PEOPLE = sql<number>`count(distinct (${L.orgId} || ':' || ${L.userId}))::int`;
+  const [providers, models] = await Promise.all([
+    db
+      .select({
+        provider: L.provider,
+        requests: REQUESTS,
+        totalTokens: TOTAL_TOKENS,
+        costMicroUsd: COST_USD,
+        costIdr: COST_IDR,
+        people: PEOPLE,
+      })
+      .from(L)
+      .where(range)
+      .groupBy(L.provider)
+      .orderBy(sql`4 desc`),
+    db
+      .select({
+        provider: L.provider,
+        modelId: L.modelId,
+        requests: REQUESTS,
+        totalTokens: TOTAL_TOKENS,
+        costMicroUsd: COST_USD,
+        costIdr: COST_IDR,
+        people: PEOPLE,
+      })
+      .from(L)
+      .where(range)
+      .groupBy(L.provider, L.modelId)
+      .orderBy(sql`5 desc`),
+  ]);
+  return { byProvider: providers, byModel: models };
 }
 
 export async function byDay(
@@ -183,7 +250,7 @@ export async function byDay(
 ): Promise<UsageByDay[]> {
   const day = sql<string>`to_char(${L.createdAt} at time zone 'Asia/Jakarta', 'YYYY-MM-DD')`;
   return db
-    .select({ day, totalTokens: TOTAL_TOKENS, costIdr: COST_IDR })
+    .select({ day, totalTokens: TOTAL_TOKENS, costMicroUsd: COST_USD, costIdr: COST_IDR })
     .from(L)
     .where(scope(orgId, period, f))
     .groupBy(day)
@@ -202,6 +269,7 @@ export async function byThread(
         projectId: sql<string | null>`max(${L.projectId})`,
         requests: REQUESTS,
         totalTokens: TOTAL_TOKENS,
+        costMicroUsd: COST_USD,
         costIdr: COST_IDR,
         lastAt: sql<string>`max(${L.createdAt})`,
       })
@@ -231,6 +299,7 @@ export async function totalsByUser(
       userId: L.userId,
       requests: REQUESTS,
       totalTokens: TOTAL_TOKENS,
+      costMicroUsd: COST_USD,
       costIdr: COST_IDR,
     })
     .from(L)

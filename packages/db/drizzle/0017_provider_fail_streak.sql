@@ -1,0 +1,1 @@
+ALTER TABLE "model_provider" ADD COLUMN "fail_streak" integer DEFAULT 0 NOT NULL;

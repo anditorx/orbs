@@ -22,21 +22,21 @@ import { type FormEvent, useState } from "react";
 import { Button } from "../components/ui/button.tsx";
 import { ConfirmDialog } from "../components/ui/confirm-dialog.tsx";
 import { Input } from "../components/ui/input.tsx";
-import { type MessageKey, t as tNow, useT } from "../i18n/index.ts";
+import { t as tNow, useT } from "../i18n/index.ts";
 import { orpc } from "../lib/rpc.ts";
 import { cn } from "../lib/utils.ts";
+import { ConnectionsPanel } from "./ConnectionsPanel.tsx";
 
 interface Section {
   id: "instructions" | "skills" | "mcp" | "plugins";
   icon: LucideIcon;
-  phase: MessageKey;
 }
 
 export const CUSTOMIZE_SECTIONS: Section[] = [
-  { id: "instructions", icon: BookText, phase: "customize.phase1" },
-  { id: "skills", icon: Sparkles, phase: "customize.phase3" },
-  { id: "mcp", icon: Plug, phase: "customize.phase2" },
-  { id: "plugins", icon: Blocks, phase: "customize.phase3" },
+  { id: "instructions", icon: BookText },
+  { id: "skills", icon: Sparkles },
+  { id: "mcp", icon: Plug },
+  { id: "plugins", icon: Blocks },
 ];
 
 const EDITABLE_KINDS: Record<string, { kind: CustomizationKind }> = {
@@ -313,7 +313,6 @@ export function CustomizePage() {
   const current = CUSTOMIZE_SECTIONS.find((s) => s.id === section) ?? CUSTOMIZE_SECTIONS[1];
   if (!current) return null;
   const Icon = current.icon;
-  const editable = current.id in EDITABLE_KINDS;
   return (
     <div className="flex h-full min-h-0">
       <nav className="w-56 shrink-0 space-y-0.5 border-r border-border p-3">
@@ -340,30 +339,16 @@ export function CustomizePage() {
             </span>
             <div>
               <h1 className="text-xl font-semibold">{t(`customize.${current.id}.title`)}</h1>
-              {!editable && (
-                <span className="text-xs text-muted-foreground">
-                  {t("customize.soon", { phase: t(current.phase) })}
-                </span>
-              )}
             </div>
           </div>
-          {editable ? (
+          {current.id === "mcp" ? (
+            <ConnectionsPanel />
+          ) : (
             <>
               <CustomizationManager sectionId={current.id} summary={t(`customize.${current.id}.summary`)} />
               <p className="mt-6 rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground">
                 {t("customize.agentNote")}
               </p>
-            </>
-          ) : (
-            <>
-              <p className="mt-4 text-muted-foreground">{t(`customize.${current.id}.summary`)}</p>
-              <ul className="mt-6 space-y-2">
-                {(["b1", "b2", "b3"] as const).map((b) => (
-                  <li key={b} className="rounded-xl border border-border bg-card px-4 py-3 text-sm">
-                    {t(`customize.${current.id}.${b}`)}
-                  </li>
-                ))}
-              </ul>
             </>
           )}
         </div>

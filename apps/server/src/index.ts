@@ -4,8 +4,11 @@ import { APIError } from "better-auth/api";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
+import { streamBus } from "./agent/streamBus.ts";
+import { startWorker } from "./agent/worker.ts";
 import { assertCanLeaveOrganization, auth, INVITATION_HEADER } from "./auth.ts";
 import { isBlockedAuthPath } from "./blockedAuthPaths.ts";
+import { handleOAuthCallback } from "./connectors/callback.ts";
 import { env } from "./env.ts";
 import { eventBus } from "./events.ts";
 import { LANG_HEADER, parseLang, runWithLang, t } from "./i18n.ts";
@@ -35,6 +38,7 @@ app.use(
 );
 
 app.get("/healthz", (c) => c.json({ ok: true }));
+app.get("/api/connections/oauth/callback", handleOAuthCallback);
 app.use("/api/auth/*", async (c, next) => {
   if (isBlockedAuthPath(new URL(c.req.url).pathname)) {
     return c.json({ message: t("http.blocked") }, 403);
@@ -66,6 +70,9 @@ app.use("/rpc/*", async (c, next) => {
 });
 
 await eventBus.start();
+await streamBus.start();
+// Replies are written inside this process for now; the worker only talks to the database, so it can move out later.
+startWorker();
 serve({ fetch: app.fetch, port: env.ORBS_SERVER_PORT }, (info) => {
   console.log(`orbs-server listening on http://localhost:${info.port}`);
 });

@@ -66,7 +66,7 @@ on infrastructure they control.
   external coding agent (e.g. Claude Code, Codex) through a harness adapter.
 - **Composer & activity timeline** — `@` mentions, `/` commands, attachments, queued messages,
   inline approvals.
-- **MCP connectors** — one-click OAuth, credentials held server-side in an encrypted vault.
+- **MCP connectors, next steps** — letting the agent use a connection, approvals before anything is written, dashboards from connected data. Sign-in, the encrypted vault and an Asana connection (read-only) already exist; see [Connections](#connections-mcp).
 - **Skills & plugins** — create them by chat or form, publish to a team registry with admin review.
 - **Code mode** — editor, diffs, terminal and coding agents running in an isolated sandbox.
 - **Desktop app** — Electron client for macOS, Windows and Linux with local-folder access.
@@ -136,19 +136,22 @@ account on a fresh installation automatically becomes the **system administrator
 
 All settings are read from environment variables (see [`.env.example`](.env.example)).
 
-| Variable                  | Default                 | Description                                                           |
-| ------------------------- | ----------------------- | --------------------------------------------------------------------- |
-| `DATABASE_URL`            | —                       | PostgreSQL connection string. **Required.**                           |
-| `BETTER_AUTH_SECRET`      | —                       | Secret used to sign sessions (at least 32 characters). **Required.**  |
-| `BETTER_AUTH_URL`         | `http://localhost:8787` | Base URL of the API as seen by the browser.                           |
-| `ORBS_WEB_URL`            | `http://localhost:5173` | Origin of the web app (used for CORS and auth redirects).             |
-| `ORBS_SERVER_PORT`        | `8787`                  | Port the API server listens on.                                       |
-| `ORBS_SIGNUP_MODE`        | `open`                  | Who may create an account: `open`, `invite-only` or `domain`.         |
-| `ORBS_SIGNUP_DOMAINS`     | —                       | Comma-separated email domains allowed when `ORBS_SIGNUP_MODE=domain`. |
-| `ORBS_DATA_DIR`           | `<repo>/.data`          | Directory for uploaded project files.                                 |
-| `ORBS_UPLOAD_MAX_FILE_MB` | `10`                    | Maximum size of a single uploaded file.                               |
-| `ORBS_PROJECT_MAX_MB`     | `500`                   | Maximum total size of one project.                                    |
-| `ORBS_PROJECT_MAX_FILES`  | `20000`                 | Maximum number of files in one project.                               |
+| Variable                      | Default                 | Description                                                                                                      |
+| ----------------------------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`                | —                       | PostgreSQL connection string. **Required.**                                                                      |
+| `BETTER_AUTH_SECRET`          | —                       | Secret used to sign sessions (at least 32 characters). **Required.**                                             |
+| `BETTER_AUTH_URL`             | `http://localhost:8787` | Base URL of the API as seen by the browser.                                                                      |
+| `ORBS_WEB_URL`                | `http://localhost:5173` | Origin of the web app (used for CORS and auth redirects).                                                        |
+| `ORBS_SERVER_PORT`            | `8787`                  | Port the API server listens on.                                                                                  |
+| `ORBS_SIGNUP_MODE`            | `open`                  | Who may create an account: `open`, `invite-only` or `domain`.                                                    |
+| `ORBS_SIGNUP_DOMAINS`         | —                       | Comma-separated email domains allowed when `ORBS_SIGNUP_MODE=domain`.                                            |
+| `ORBS_DATA_DIR`               | `<repo>/.data`          | Directory for uploaded project files.                                                                            |
+| `ORBS_UPLOAD_MAX_FILE_MB`     | `10`                    | Maximum size of a single uploaded file.                                                                          |
+| `ORBS_PROJECT_MAX_MB`         | `500`                   | Maximum total size of one project.                                                                               |
+| `ORBS_PROJECT_MAX_FILES`      | `20000`                 | Maximum number of files in one project.                                                                          |
+| `ORBS_CONNECTOR_RATE_PER_MIN` | `60`                    | Calls per minute one person may make through one connection.                                                     |
+| `ORBS_ALLOW_PRIVATE_MCP_URLS` | `false`                 | Allow custom MCP servers on private addresses and plain http (trusted self-hosted setups only).                  |
+| `ORBS_SECRET_KEY`             | —                       | 32-byte base64 key that encrypts connector credentials (`openssl rand -base64 32`). Required to use connections. |
 
 The bundled `docker-compose.yml` is for **local development only**. Its default database
 password can be overridden with `POSTGRES_PASSWORD`; optional profiles start MinIO
@@ -169,11 +172,180 @@ initial setup.
 
 ### Model management
 
-System administrators keep a **registry of AI models** (provider, model ID, prices, maximum data
-class) under **System Admin → Models**, with a global on/off switch per model. For each organization they
-then choose which models **appear** and which of those are **enabled**: a model that appears but is
-disabled is shown greyed out with the reason; a model that does not appear is not offered at all.
-A disabled model can't be chosen for a new conversation, even by an outdated client.
+System administrators manage models under **System Admin → Models**:
+
+1. **Add model provider** opens a prompt (details below). Once the provider shows **Connected**, open it to
+   see every model its key offers.
+2. Each model has two switches. **Active** puts the model in the model lists (it is registered the first time,
+   under the provider's own name for it). **Enabled** decides whether people can choose it: a model that is
+   active but not enabled is still listed, shown greyed out with the reason, and the server refuses it for a
+   new conversation even from an outdated client.
+3. Every active model appears in every organization. **Models per organization** lets an administrator hide a
+   model from one organization, or switch it off there (greyed out), overriding the default for that
+   organization only. Prices and the maximum data class are edited under **Active models**.
+
+Making a model inactive removes it from all lists but keeps its prices and settings.
+
+Usage is shown in tokens, US dollars and rupiah. Everyone sees their own under **Usage**: totals, per project,
+per provider, per model and per day. Organization administrators also see each member (with a daily chart and
+per-provider rollup), and system administrators see this month's cost per provider and per model across all
+organizations under **System Admin → Models**. A model with no price set is recorded at zero cost, so set prices
+under **Active models**. Nothing is recorded until the agent exists to call the models.
+
+What happens to models when their provider changes:
+
+- **Provider not connected** (key revoked or expired, or credentials never set up): its models stay, with all their
+  settings, and are shown **dimmed** with the reason "Its provider isn't connected right now". They can't be chosen,
+  and "Automatic" ignores them. When the provider connects again they come back by themselves. A passing problem
+  (network, timeout, provider overload) does not count: it takes three failed background checks in a row, while a
+  key the provider rejects counts at once.
+- **Provider deleted**: its models are deleted with it, including their prices and per-organization settings. The
+  confirmation says how many. Conversation and usage history are kept (usage is recorded by name with the price
+  frozen at the time).
+
+### Model providers
+
+Model management is for **system administrators only**: every model and provider call is refused for
+anyone else, and `/admin` redirects other roles away. Under **System Admin → Models**, **Add model provider**
+opens a short conversation. A suggestion is ready to send as it is
+(`/add-new-model-provider Help me add a new model provider. Start by asking for its name and connection details.`),
+and the assistant then asks only for what is still missing: which provider (Gemini first), the API key, and
+optional labels (a name, project name, project number). You can answer in one go instead, with labelled lines
+or the `curl` example from Google AI Studio. The key is hidden in the transcript, goes straight to the server
+and is stored encrypted with `ORBS_SECRET_KEY` (only its last four characters are ever shown again). This is a
+scripted assistant, not a language model: it recognises the details it needs and asks for the rest.
+
+Connecting checks the key with the provider. The **Connected / Connection failed** badge is live: Orbs
+re-verifies the key on every load, every 30 seconds and whenever you return to the window, so a revoked or
+expired key shows as failed without anyone clicking anything.
+
+Opening a connected provider also runs **Check endpoints and models**, which lists every model the key can
+see and probes each endpoint family once with the smallest possible request (a few tokens): list models,
+get a model, generate, stream, count tokens, embeddings, files, cached contents and tuned models. A model
+that is listed but refused for your project (or temporarily overloaded) is skipped for the next candidate.
+Tuned models are reported as "not offered to API keys" rather than failed, because Google only serves them
+to OAuth credentials.
+
+To try the screens without a key: `MOCK_GEMINI_KEY=demo-key pnpm --filter @orbs/server dev:mock-gemini`
+and set `ORBS_GEMINI_API_URL=http://127.0.0.1:8798/v1beta` (never in production; it also redirects the
+live status checks).
+
+### Chat with a model
+
+Conversations now get replies. A message queues a **turn** (a database row, so a restart can't leave a
+conversation "typing" forever); a worker inside the API process takes it, asks the model, streams the text to
+the screen as it is written and stores only the **final answer** as an event. **Stop** keeps what was written
+so far, marked unfinished. Tokens spent are recorded in the usage ledger (dollars and rupiah) for finished,
+failed and stopped replies alike, and the monthly budgets apply before a message is accepted.
+
+A model can answer only when **all** of these hold: its provider is connected, an administrator has confirmed
+the provider account is on a **paid plan** (the switch on the provider's row), its **price** is filled in
+(at or above the provider's price, so use is never counted as free), it is Active and Enabled, and the
+organization hasn't switched it off. The paid-plan confirmation exists because free plans may let the
+provider use prompts and replies to improve its products; Orbs can't tell the plan from the key, so an
+administrator has to say it. _Automatic_ picks the cheapest usable priced model.
+
+Saved instructions are part of every reply: the base prompt, then the organization's, the project's and the
+person's own, and the conversation so far (about the last 30,000 tokens). One reply is written at a time per
+conversation, a person can send 20 messages a minute, a transient failure before any text is retried twice
+(1 s, 3 s), and a reply gives up after 30 s of silence or 120 s in total. A conversation still called "New conversation" is named after its topic by the model after the first reply, and
+rechecked every fourth reply (the naming call is billed like any other); a title you typed yourself is never
+changed. Replies are rendered as Markdown (headings, lists, tables, code; raw HTML is shown as text, unsafe links are
+dropped and images are not loaded). No tools or other providers yet.
+
+Integration tests (they create and remove their own rows) must run against a scratch database, never your real one:
+`DATABASE_URL=postgres://…/orbs_scratch pnpm --filter @orbs/server test:integration`. The mock Gemini also
+answers chat: it echoes your last message, and `#429`, `#503`, `#flaky`, `#slow`, `#blocked` and `#empty` in the
+message make it fail in the matching way.
+
+**Connected apps in chat.** The apps a person connected (Asana, by token or sign-in) are offered to the model as
+tools in every reply, so "list my Asana tasks" is answered from their real data. Only read-only actions are offered,
+nothing is ever created, changed or deleted, and a reply makes at most six rounds of tool use before the model must
+answer with what it has. Results are handed over as data with a note to ignore any instructions inside them, are cut at
+20,000 characters, and every call is rate-limited and audited like a manual one. The chat shows which app was used, each
+round's tokens are billed, and an app whose connection expired is left out with a note asking to reconnect. Not offered
+yet: your own MCP servers, actions that write, and models without tool calling (Gemma).
+
+**Which workspaces.** An Asana account can have several workspaces. A token connection covers all of them: asking for
+"my tasks" looks in each and labels every answer with its workspace, and naming one ("in Acme") narrows it. When the
+account has more than one, the Asana row shows a checklist of the workspaces the assistant may use; only the ticked ones
+are searched, listed by `get_me`, or reachable by a task's id. Before anything is chosen all are on, and pasting a new
+token starts over. A sign-in (MCP) connection belongs to the single workspace picked when it was authorized, because
+Asana's MCP tokens are workspace-scoped, so it has nothing to choose.
+
+### Connections (MCP)
+
+People can connect their own accounts in other apps under **Customize → Connections (MCP)**. The
+first service is **Asana**, through its MCP server. A connection is read-only for now: Orbs keeps its
+own allow-list of tools and blocks every tool that changes or deletes data, plus any tool it has not
+reviewed yet (Asana's sign-in has no scopes, so Orbs is the only gatekeeper).
+
+Connections belong to each person. Anyone can connect their own account with **their own OAuth
+app** (see below), so no setup is needed. A system administrator may optionally register a **shared
+app** once per installation:
+
+1. Set `ORBS_SECRET_KEY` (see [Configuration](#configuration)) and restart the server. Back it up:
+   without it stored connections become unreadable.
+2. In Asana's developer console create an **MCP app** and register the redirect URI shown under
+   **System Admin → Connections** (`<ORBS_WEB_URL>/api/connections/oauth/callback`).
+3. Paste the app's client ID and secret into **System Admin → Connections**. The secret is
+   encrypted on the server and never shown again.
+
+With a shared app configured, everyone can connect right away.
+
+There are two ways to connect, as tabs in the Asana row. **Token** is the simplest: paste one personal
+access token (Asana → My settings → Apps → Personal access token; the eye icon shows what you pasted). Orbs
+tries it against Asana first, stores it encrypted, and asks for a new one when Asana stops accepting it; no
+OAuth app is needed. Asana's MCP server only accepts tokens issued by its own sign-in ("token was not issued
+by Asana OAuth"), so a token connection reads through Asana's **REST API** instead, with a small set of
+read-only actions Orbs defines itself (`get_me`, `get_my_tasks`, `list_projects`, `get_task`, `search_tasks`;
+search needs a paid Asana plan). Every request is a GET. **MCP (sign in)** uses the OAuth flow below. If Asana answers `redirect_uri parameter does not match`,
+the address registered in your Asana app (OAuth tab) is not exactly the one Orbs shows.
+**Connect** sends you to Asana and Asana brings you back to Orbs. For that, add exactly the address Orbs shows
+(`<ORBS_WEB_URL>/api/connections/oauth/callback`) under Redirect URLs in the Asana app; with an empty list Asana answers
+`redirect_uri parameter does not match`. Asana documents https for web apps, and its forum has reports both ways about
+`http://localhost`. If it refuses your address, reach Orbs through an HTTPS tunnel (`ORBS_WEB_URL` and `BETTER_AUTH_URL`
+set to the tunnel's address, `ORBS_ALLOWED_HOSTS` to its domain, Orbs opened through that address), or use **Use a code
+instead**: tick **This is a native or command-line app** in the Asana app, and copy the code Asana shows once; coming back
+to Orbs picks it up from the clipboard, or paste it in the field.
+
+Each person then clicks **Connect** and signs in with their own Asana account, so Orbs never sees
+more than that person can. Tokens are stored encrypted per organization and person, refreshed
+automatically, and revoked at Asana when someone disconnects. Connecting, disconnecting and every
+tool call (the tool name only, never content) appear in the audit log.
+
+Anyone, in any role, can register **their own OAuth app** under **Use my own app**, without waiting for
+a system administrator. It applies only to that person's account and replaces the shared app; saving
+or removing it disconnects their current connection.
+
+### Your own MCP servers
+
+Under **Add an MCP server** anyone can connect any MCP server by its address (and an optional bearer
+token). It belongs to that person alone. Because the server is untrusted, Orbs:
+
+- accepts only public **https** addresses and checks DNS on every connection, so it can't be pointed at
+  internal services (cloud metadata, databases, localhost). Trusted self-hosted setups can relax this
+  with `ORBS_ALLOW_PRIVATE_MCP_URLS=true`;
+- refuses redirects, so a token never leaves for an unchecked address;
+- runs **nothing** until the owner switches a specific tool on (labels like "says it only reads" come
+  from the server and never grant access);
+- encrypts the token, caps output, rate-limits calls (`ORBS_CONNECTOR_RATE_PER_MIN`), allows 10 servers
+  per person, and audits adds, removals and calls (names and hosts only).
+
+Servers that need OAuth sign-in are not supported yet; only none or a bearer token.
+
+For services Orbs has no built-in support for, **Add by prompt** on the same page opens a prompt box, pre-filled
+in the active language (`/Add-MCP Help me add a new global MCP server…`). Sending it starts a
+conversation about the new connection. Until the agent exists the message is only stored, and the
+box warns people not to paste secrets.
+
+People can also try an allowed action by hand: under **Show actions**, pick one and run it with JSON
+arguments to see the raw answer. Calls are limited per connection (see `ORBS_CONNECTOR_RATE_PER_MIN`)
+and long answers are cut at 100,000 characters.
+
+To try the flow without an Asana account, run `pnpm --filter @orbs/server dev:mock-asana`, set
+`ORBS_ASANA_MCP_URL=http://127.0.0.1:8799/v2/mcp`, and use client ID `mock-client` / secret
+`mock-secret`. Never set `ORBS_ASANA_MCP_URL` in production.
 
 ### Languages
 
@@ -235,17 +407,18 @@ pnpm --filter @orbs/server admin:demote  admin@example.com
 
 ## Development
 
-| Command            | Description                                                        |
-| ------------------ | ------------------------------------------------------------------ |
-| `pnpm dev`         | Run the API server and web app in watch mode.                      |
-| `pnpm lint`        | Lint and check formatting with Biome.                              |
-| `pnpm format`      | Format the codebase with Biome.                                    |
-| `pnpm typecheck`   | Type-check every package.                                          |
-| `pnpm test`        | Run unit tests (Vitest).                                           |
-| `pnpm build`       | Build the packages that produce artifacts (currently the web app). |
-| `pnpm db:up`       | Start the local PostgreSQL container.                              |
-| `pnpm db:generate` | Generate a migration from schema changes.                          |
-| `pnpm db:migrate`  | Apply pending migrations.                                          |
+| Command                                       | Description                                                                                                                                                                                                                    |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `pnpm dev`                                    | Run the API server and web app in watch mode.                                                                                                                                                                                  |
+| `pnpm lint`                                   | Lint and check formatting with Biome.                                                                                                                                                                                          |
+| `pnpm format`                                 | Format the codebase with Biome.                                                                                                                                                                                                |
+| `pnpm typecheck`                              | Type-check every package.                                                                                                                                                                                                      |
+| `pnpm test`                                   | Run unit tests (Vitest).                                                                                                                                                                                                       |
+| `pnpm --filter @orbs/server test:integration` | Run the connector, provider and model flows against the database in `DATABASE_URL` (also needs `ORBS_SECRET_KEY`). Prefer a scratch database: `createdb orbs_scratch`, migrate it, and run with `DATABASE_URL=…/orbs_scratch`. |
+| `pnpm build`                                  | Build the packages that produce artifacts (currently the web app).                                                                                                                                                             |
+| `pnpm db:up`                                  | Start the local PostgreSQL container.                                                                                                                                                                                          |
+| `pnpm db:generate`                            | Generate a migration from schema changes.                                                                                                                                                                                      |
+| `pnpm db:migrate`                             | Apply pending migrations.                                                                                                                                                                                                      |
 
 Continuous integration runs linting, type checks, tests, migrations against a fresh database and a
 production build of the web app on pushes to `main` and on every pull request.
@@ -269,6 +442,8 @@ Security is a core requirement, not an afterthought. Current safeguards include:
 - Configurable sign-up policy with invitation links bound to the recipient's email address.
 - Blocking a user immediately revokes all of their sessions.
 - Security-relevant actions (deletions, role changes, uploads, blocks) are written to an audit log.
+- Connector credentials and tokens are encrypted at rest (AES-256-GCM, bound to their owner), never
+  returned by the API, and sign-in uses PKCE, a single-use `state` and issuer checking.
 - Uploaded paths are normalized and confined to the project directory; secret files such as
   `.env` and private keys are never accepted.
 

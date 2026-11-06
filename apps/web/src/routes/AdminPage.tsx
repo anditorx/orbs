@@ -8,7 +8,17 @@ import {
 } from "@orbs/protocol";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { ArrowLeft, Building2, Cpu, ScrollText, ShieldCheck, Trash2, UserPlus, Users } from "lucide-react";
+import {
+  ArrowLeft,
+  Building2,
+  Cpu,
+  Plug,
+  ScrollText,
+  ShieldCheck,
+  Trash2,
+  UserPlus,
+  Users,
+} from "lucide-react";
 import { type FormEvent, useState } from "react";
 import { Orb } from "../components/Orb.tsx";
 import { Button } from "../components/ui/button.tsx";
@@ -18,15 +28,17 @@ import { PromptDialog } from "../components/ui/prompt-dialog.tsx";
 import { getLang, localeOf, type MessageKey, useRoleLabel, useT } from "../i18n/index.ts";
 import { orpc } from "../lib/rpc.ts";
 import { cn } from "../lib/utils.ts";
+import { ConnectorsTab } from "./AdminConnectors.tsx";
 import { ModelsTab } from "./AdminModels.tsx";
 
-type Tab = "overview" | "users" | "orgs" | "models" | "audit";
+type Tab = "overview" | "users" | "orgs" | "models" | "connections" | "audit";
 
 const tabs: Array<{ id: Tab; label: MessageKey; icon: typeof Users }> = [
   { id: "overview", label: "admin.tab.overview", icon: ShieldCheck },
   { id: "users", label: "admin.tab.users", icon: Users },
   { id: "orgs", label: "admin.tab.orgs", icon: Building2 },
   { id: "models", label: "admin.tab.models", icon: Cpu },
+  { id: "connections", label: "admin.tab.connections", icon: Plug },
   { id: "audit", label: "admin.tab.audit", icon: ScrollText },
 ];
 
@@ -838,6 +850,7 @@ export function AdminPage() {
         {tab === "users" && <UsersTab />}
         {tab === "orgs" && <OrgsTab />}
         {tab === "models" && <ModelsTab />}
+        {tab === "connections" && <ConnectorsTab />}
         {tab === "audit" && <AuditTab />}
       </div>
     </div>
