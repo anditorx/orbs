@@ -40,6 +40,8 @@ export function useLiveEvents(enabled: boolean) {
         return;
       }
       if (event.streamType !== "thread") return;
+      if (event.type === "artifact.saved")
+        void queryClient.invalidateQueries({ queryKey: orpc.artifacts.key() });
       const key = orpc.events.list.queryKey({
         input: { streamType: "thread", streamId: event.streamId, afterSeq: 0 },
       });

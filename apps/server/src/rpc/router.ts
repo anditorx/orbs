@@ -21,6 +21,7 @@ import {
   takeMessageSlot,
   wake,
 } from "../agent/turns.ts";
+import { ArtifactError, getArtifact, listArtifacts } from "../artifacts.ts";
 import { audit } from "../audit.ts";
 import { db } from "../db.ts";
 import { appendEvent, createEventVisibility, eventBus, listVisibleEvents } from "../events.ts";
@@ -355,6 +356,24 @@ export const router = os.router({
         );
         return { deleted: true as const };
       });
+    }),
+  },
+
+  artifacts: {
+    list: inOrg.artifacts.list.handler(async ({ context, input }) => {
+      try {
+        return await listArtifacts(context.orgId, context.user.id, input.threadId);
+      } catch (error) {
+        if (error instanceof ArtifactError)
+          throw new ORPCError("NOT_FOUND", { message: t("common.threadNotFound") });
+        throw error;
+      }
+    }),
+
+    get: inOrg.artifacts.get.handler(async ({ context, input }) => {
+      const page = await getArtifact(context.orgId, context.user.id, input.artifactId, input.version);
+      if (!page) throw new ORPCError("NOT_FOUND", { message: t("artifact.notFound") });
+      return page;
     }),
   },
 

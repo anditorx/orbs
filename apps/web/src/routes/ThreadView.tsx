@@ -25,6 +25,7 @@ import { useDeleteThread } from "../lib/useDeleteThread.ts";
 import { modKey, useShortcuts } from "../lib/useShortcuts.ts";
 import { type LiveTool, useTurn } from "../lib/useTurn.ts";
 import { cn } from "../lib/utils.ts";
+import { ArtifactPreview } from "./ArtifactPreview.tsx";
 
 /** Which of the person's apps the assistant used (or is using) for this reply, each use on its own line. */
 function ToolLines({ tools }: { tools: LiveTool[] }) {
@@ -158,6 +159,25 @@ function EventRow({ event }: { event: OrbsEvent }) {
       </p>
     );
   }
+  if (event.type === "artifact.saved") {
+    return (
+      <div className="mx-auto flex max-w-[75%] items-center justify-between gap-3 rounded-xl border border-border bg-card px-3 py-2 text-xs">
+        <span>
+          {t("thread.artifact.saved", {
+            title: String(event.payload.title ?? ""),
+            version: Number(event.payload.version ?? 1),
+          })}
+        </span>
+        <button
+          type="button"
+          onClick={() => setUi({ rightPanelOpen: true, rightPanelTab: "preview" })}
+          className="shrink-0 font-medium text-primary hover:underline"
+        >
+          {t("thread.artifact.open")}
+        </button>
+      </div>
+    );
+  }
   if (event.type === "turn.cancelled") {
     return <p className="text-center text-xs text-muted-foreground">{t("thread.stopped")}</p>;
   }
@@ -176,7 +196,7 @@ export function ThreadView() {
   const t = useT();
   const { threadId } = useParams({ from: "/app/t/$threadId" });
   const input = { streamType: "thread", streamId: threadId, afterSeq: 0 };
-  const { data: events = [] } = useQuery(orpc.events.list.queryOptions({ input }));
+  const { data: events = [], isSuccess: eventsLoaded } = useQuery(orpc.events.list.queryOptions({ input }));
   const { data: threads = [] } = useQuery(orpc.threads.list.queryOptions({ input: { limit: 200 } }));
   const thread = threads.find((th) => th.id === threadId);
   const [engine, setEngine] = useState<Engine>({ kind: "auto" });
@@ -190,6 +210,7 @@ export function ThreadView() {
   const busy = live.state?.status === "queued" || live.state?.status === "running";
   const deleteThread = useDeleteThread();
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [previewWide, setPreviewWide] = useState(false);
   const panelOpen = useUi((s) => s.rightPanelOpen);
   const panelTab = useUi((s) => s.rightPanelTab);
   const shortcuts = useMemo(
@@ -206,6 +227,25 @@ export function ThreadView() {
   }, [savedEngine]);
 
   const sorted = useMemo(() => [...events].sort((a, b) => a.seq - b.seq), [events]);
+
+  // A dashboard that appears while the conversation is open opens the preview; one that was already there doesn't.
+  const lastPage = useRef<number | null>(null);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: start from nothing in another conversation
+  useEffect(() => {
+    lastPage.current = null;
+  }, [threadId]);
+  useEffect(() => {
+    if (!eventsLoaded) return;
+    const newest = Math.max(0, ...events.filter((e) => e.type === "artifact.saved").map((e) => e.seq));
+    if (lastPage.current === null) {
+      lastPage.current = newest;
+      return;
+    }
+    if (newest > lastPage.current) {
+      lastPage.current = newest;
+      setUi({ rightPanelOpen: true, rightPanelTab: "preview" });
+    }
+  }, [events, eventsLoaded]);
   useEffect(() => {
     if (sorted.length > 0) bottom.current?.scrollIntoView({ behavior: "smooth" });
   }, [sorted.length]);
@@ -333,7 +373,14 @@ export function ThreadView() {
       </div>
 
       {panelOpen && (
-        <aside className="flex w-80 shrink-0 flex-col border-l border-border bg-sidebar">
+        <aside
+          className={cn(
+            "flex shrink-0 flex-col border-l border-border bg-sidebar",
+            panelTab !== "preview" && "w-80",
+            panelTab === "preview" && !previewWide && "w-[min(40rem,50vw)]",
+            panelTab === "preview" && previewWide && "w-[min(72rem,80vw)]",
+          )}
+        >
           <div className="flex h-12 shrink-0 items-center gap-1 border-b border-border px-2">
             {tabs.map(({ id, label, icon: Icon }) => (
               <button
@@ -357,7 +404,9 @@ export function ThreadView() {
               <X className="size-4" />
             </button>
           </div>
-          <div className="min-h-0 flex-1 overflow-y-auto p-4 text-sm">
+          <div
+            className={cn("min-h-0 flex-1 overflow-y-auto text-sm", panelTab === "preview" ? "p-3" : "p-4")}
+          >
             {panelTab === "info" && thread && (
               <dl className="space-y-3">
                 <div>
@@ -389,7 +438,13 @@ export function ThreadView() {
               </dl>
             )}
             {panelTab === "files" && <p className="text-muted-foreground">{t("thread.files")}</p>}
-            {panelTab === "preview" && <p className="text-muted-foreground">{t("thread.preview")}</p>}
+            {panelTab === "preview" && (
+              <ArtifactPreview
+                threadId={threadId}
+                expanded={previewWide}
+                onToggleExpanded={() => setPreviewWide((v) => !v)}
+              />
+            )}
           </div>
         </aside>
       )}

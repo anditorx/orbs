@@ -648,3 +648,24 @@ export const TurnStreamItem = z.discriminatedUnion("type", [
   }),
 ]);
 export type TurnStreamItem = z.infer<typeof TurnStreamItem>;
+
+/** A page the assistant made for a conversation, with how many versions it has. */
+export const ArtifactSummary = z.object({
+  id: z.string(),
+  threadId: z.string(),
+  title: z.string(),
+  /** The newest version number. */
+  version: z.number().int(),
+  versions: z.array(z.object({ version: z.number().int(), createdAt: z.string() })),
+  updatedAt: z.string(),
+});
+export type ArtifactSummary = z.infer<typeof ArtifactSummary>;
+
+export const ArtifactDetail = z.object({
+  id: z.string(),
+  title: z.string(),
+  /** The version whose page is returned. */
+  version: z.number().int(),
+  html: z.string(),
+});
+export type ArtifactDetail = z.infer<typeof ArtifactDetail>;

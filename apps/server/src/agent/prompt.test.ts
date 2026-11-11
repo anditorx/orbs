@@ -88,6 +88,24 @@ describe("what the assistant may claim about connected apps", () => {
     expect(text).toContain("Asana");
   });
 
+  it("explains how to make a dashboard, and names the ones this conversation already has", () => {
+    const text = describeAccess([], false, {
+      enabled: true,
+      existing: [{ id: "abc-123", title: "Sales", version: 2 }],
+    });
+    expect(text).toContain("create_dashboard");
+    expect(text).toContain("update_dashboard");
+    expect(text).toContain("Chart");
+    expect(text).toContain("no network");
+    expect(text).toContain('"Sales" (artifact_id: abc-123, version 2)');
+    expect(text).toContain("Never put secrets");
+  });
+
+  it("says nothing about dashboards when the model can't make them", () => {
+    expect(describeAccess([], false, { enabled: false, existing: [] })).not.toContain("create_dashboard");
+    expect(describeAccess([])).not.toContain("create_dashboard");
+  });
+
   it("is part of every system prompt", () => {
     const p = buildSystemPrompt({
       now,
