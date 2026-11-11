@@ -1,6 +1,7 @@
 import { eventIterator, oc } from "@orpc/contract";
 import { z } from "zod";
 import {
+  ActiveInstructions,
   AdminConnector,
   AdminModel,
   AdminModelInput,
@@ -433,6 +434,13 @@ export const contract = {
   },
   customizations: {
     list: oc.input(z.object({ kind: CustomizationKind.optional() })).output(z.array(Customization)),
+    /**
+     * What the assistant reads from the saved instructions: in a conversation (`threadId`), or in a project
+     * (`projectId`), or outside any project when neither is given.
+     */
+    active: oc
+      .input(z.object({ threadId: z.string().optional(), projectId: z.string().nullable().optional() }))
+      .output(ActiveInstructions),
     create: oc.input(CustomizationInput).output(Customization),
     update: oc.input(z.object({ id: z.string(), patch: CustomizationPatch })).output(Customization),
     delete: oc.input(z.object({ id: z.string() })).output(z.object({ deleted: z.literal(true) })),

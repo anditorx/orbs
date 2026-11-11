@@ -221,8 +221,11 @@ export const budget = pgTable(
 
 /**
  * User-authored instructions, skills (SKILL.md body) and plugins (manifest JSON body).
- * `scope` "user" is private to `ownerId`; "org" is shared with the whole workspace (admins only).
- * `projectId` null = applies everywhere; otherwise only inside that project.
+ * `scope` "user" is private to `ownerId`; "org" is shared with the whole workspace (admins, or the creator of
+ * the projects it is limited to).
+ * `appliesTo` says where it takes effect: "all" = every conversation (also those outside a project),
+ * "all_projects" = every conversation that is inside a project, "projects" = only the projects listed in
+ * `customization_project`.
  */
 export const customization = pgTable(
   "customization",
@@ -234,7 +237,9 @@ export const customization = pgTable(
     scope: text("scope", { enum: ["user", "org"] })
       .notNull()
       .default("user"),
-    projectId: text("project_id").references(() => project.id, { onDelete: "cascade" }),
+    appliesTo: text("applies_to", { enum: ["all", "all_projects", "projects"] })
+      .notNull()
+      .default("all"),
     name: text("name").notNull(),
     description: text("description").notNull().default(""),
     body: text("body").notNull().default(""),
@@ -244,6 +249,23 @@ export const customization = pgTable(
     updatedAt: updatedAt(),
   },
   (t) => [index("customization_org_kind_idx").on(t.orgId, t.kind)],
+);
+
+/** The projects a customization with `applies_to = 'projects'` is limited to. Goes with either side. */
+export const customizationProject = pgTable(
+  "customization_project",
+  {
+    customizationId: text("customization_id")
+      .notNull()
+      .references(() => customization.id, { onDelete: "cascade" }),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => project.id, { onDelete: "cascade" }),
+  },
+  (t) => [
+    uniqueIndex("customization_project_uq").on(t.customizationId, t.projectId),
+    index("customization_project_project_idx").on(t.projectId),
+  ],
 );
 
 /**

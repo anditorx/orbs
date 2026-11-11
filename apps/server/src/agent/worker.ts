@@ -26,6 +26,7 @@ import {
   type ToolCall,
   type Usage,
 } from "./gemini.ts";
+import { activeInstructions } from "./instructions.ts";
 import { buildHistory, buildSystemPrompt, type ConnectedApp, type InstructionText } from "./prompt.ts";
 import { MAX_DELTA_CHARS, streamBus } from "./streamBus.ts";
 import { buildTitleRequest, cleanTitle, shouldRetitle } from "./title.ts";
@@ -157,30 +158,13 @@ async function prepare(
     .limit(1);
   const projectId = thread?.projectId ?? null;
 
-  const saved = await db
-    .select({
-      scope: schema.customization.scope,
-      ownerId: schema.customization.ownerId,
-      projectId: schema.customization.projectId,
-      name: schema.customization.name,
-      body: schema.customization.body,
-    })
-    .from(schema.customization)
-    .where(
-      and(
-        eq(schema.customization.orgId, turn.orgId),
-        eq(schema.customization.kind, "instruction"),
-        eq(schema.customization.enabled, true),
-      ),
-    )
-    .orderBy(asc(schema.customization.createdAt));
-  const instructions: InstructionText[] = saved
-    .filter(
-      (i) =>
-        (i.projectId === null || i.projectId === projectId) &&
-        (i.scope === "org" || i.ownerId === turn.userId),
-    )
-    .map((i) => ({ scope: i.projectId ? "project" : i.scope, name: i.name, body: i.body }));
+  const instructions: InstructionText[] = (await activeInstructions(turn.orgId, turn.userId, projectId)).map(
+    (i) => ({
+      scope: i.tier,
+      name: i.name,
+      body: i.body,
+    }),
+  );
 
   // The apps this person connected in this organization, so the assistant states facts instead of guessing.
   const connected = await db

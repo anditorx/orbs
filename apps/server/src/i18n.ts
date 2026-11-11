@@ -51,10 +51,17 @@ const messages = {
     "custom.invalidJson": "The plugin body must be a valid JSON manifest",
     "custom.invalidManifest": "Invalid plugin manifest: {path} — {detail}",
     "custom.notFound": "Customization not found",
-    "custom.orgCreateAdminOnly": "Only workspace admins can create items for the whole workspace",
+    "custom.pickProject": "Choose at least one project, or change where this applies",
+    "custom.shareScope":
+      "Only workspace admins can share with the whole workspace. You can share with the projects you created.",
+    "custom.instructionTooLong":
+      "Too long: {tier} instructions can hold {limit} characters in all, and this would make {used}. Shorten it or switch another one off.",
+    "custom.tier.org": "the workspace's",
+    "custom.tier.project": "a project's",
+    "custom.tier.user": "your personal",
     "custom.kindFixed": "An item's type can't be changed",
-    "custom.shareAdminOnly": "Only workspace admins can share with the whole workspace",
-    "custom.editOrgAdminOnly": "Only workspace admins can change workspace items",
+    "custom.editOrgAdminOnly":
+      "Only workspace admins, or the creator of the project it is limited to, can change workspace items",
     "custom.editOwnerOnly": "Only the owner can change this item",
     "project.codeOnly": "Only Code projects accept files",
     "project.invalidPath": "Invalid path",
@@ -153,10 +160,17 @@ const messages = {
     "custom.invalidJson": "Isi plugin harus berupa JSON manifest yang valid",
     "custom.invalidManifest": "Manifest plugin tidak valid: {path} — {detail}",
     "custom.notFound": "Kustomisasi tidak ditemukan",
-    "custom.orgCreateAdminOnly": "Hanya admin ruang kerja yang bisa membuat item untuk seluruh ruang kerja",
+    "custom.pickProject": "Pilih minimal satu proyek, atau ubah di mana ini berlaku",
+    "custom.shareScope":
+      "Hanya admin ruang kerja yang bisa membagikan ke seluruh ruang kerja. Kamu bisa membagikan ke proyek yang kamu buat.",
+    "custom.instructionTooLong":
+      "Terlalu panjang: instruksi {tier} muat {limit} karakter seluruhnya, dan ini akan menjadi {used}. Persingkat atau nonaktifkan yang lain.",
+    "custom.tier.org": "ruang kerja",
+    "custom.tier.project": "proyek",
+    "custom.tier.user": "pribadimu",
     "custom.kindFixed": "Jenis item tidak bisa diubah",
-    "custom.shareAdminOnly": "Hanya admin ruang kerja yang bisa membagikan ke seluruh ruang kerja",
-    "custom.editOrgAdminOnly": "Hanya admin ruang kerja yang bisa mengubah item milik ruang kerja",
+    "custom.editOrgAdminOnly":
+      "Hanya admin ruang kerja, atau pembuat proyek yang dibatasi item ini, yang bisa mengubah item milik ruang kerja",
     "custom.editOwnerOnly": "Hanya pemilik yang bisa mengubah item ini",
     "project.codeOnly": "Hanya proyek Kode yang menerima file",
     "project.invalidPath": "Path tidak valid",

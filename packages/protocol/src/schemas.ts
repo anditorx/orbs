@@ -295,13 +295,20 @@ export type CustomizationKind = z.infer<typeof CustomizationKind>;
 export const CustomizationScope = z.enum(["user", "org"]);
 export type CustomizationScope = z.infer<typeof CustomizationScope>;
 
+/**
+ * Where a customization takes effect: every conversation, every conversation that is inside a project, or only
+ * the projects it lists.
+ */
+export const AppliesTo = z.enum(["all", "all_projects", "projects"]);
+export type AppliesTo = z.infer<typeof AppliesTo>;
+
 export const Customization = z.object({
   id: z.string(),
   kind: CustomizationKind,
   scope: CustomizationScope,
-  /** Null = applies in every project. */
-  projectId: z.string().nullable(),
-  projectName: z.string().nullable(),
+  appliesTo: AppliesTo,
+  /** The projects it is limited to; empty unless `appliesTo` is "projects". */
+  projects: z.array(z.object({ id: z.string(), name: z.string() })),
   ownerId: z.string().nullable(),
   ownerName: z.string().nullable(),
   name: z.string(),
@@ -316,10 +323,41 @@ export const Customization = z.object({
 });
 export type Customization = z.infer<typeof Customization>;
 
+/** What the assistant reads from the saved instructions in one place (a conversation, or a project, or neither). */
+export const ActiveInstructions = z.object({
+  /** The project they were worked out for; null outside any project. */
+  projectId: z.string().nullable(),
+  projectName: z.string().nullable(),
+  items: z.array(
+    z.object({
+      id: z.string(),
+      name: z.string(),
+      tier: z.enum(["org", "project", "user"]),
+      scope: CustomizationScope,
+      appliesTo: AppliesTo,
+      /** Who wrote it. */
+      ownerName: z.string().nullable(),
+      projectNames: z.array(z.string()),
+      chars: z.number().int(),
+      /** Whole, cut at its level's limit, or left out for lack of room. */
+      fit: z.enum(["whole", "cut", "left_out"]),
+    }),
+  ),
+  /** Characters used and allowed, per level. */
+  usage: z.array(
+    z.object({ tier: z.enum(["org", "project", "user"]), used: z.number().int(), limit: z.number().int() }),
+  ),
+  /** The instruction part of the prompt exactly as the assistant gets it; empty when nothing applies. */
+  text: z.string(),
+});
+export type ActiveInstructions = z.infer<typeof ActiveInstructions>;
+
 export const CustomizationInput = z.object({
   kind: CustomizationKind,
   scope: CustomizationScope.default("user"),
-  projectId: z.string().nullable().default(null),
+  appliesTo: AppliesTo.default("all"),
+  /** Needed (at least one) when `appliesTo` is "projects"; ignored otherwise. */
+  projectIds: z.array(z.string()).max(100).default([]),
   name: z.string().trim().min(1).max(120),
   description: z.string().trim().max(500).default(""),
   body: z.string().max(100_000).default(""),
@@ -336,7 +374,8 @@ export const CustomizationPatch = z
   .object({
     kind: CustomizationKind,
     scope: CustomizationScope,
-    projectId: z.string().nullable(),
+    appliesTo: AppliesTo,
+    projectIds: z.array(z.string()).max(100),
     name: z.string().trim().min(1).max(120),
     description: z.string().trim().max(500),
     body: z.string().max(100_000),

@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { EnginePicker } from "../components/EnginePicker.tsx";
+import { InstructionsChip } from "../components/InstructionsReader.tsx";
 import { Markdown } from "../components/Markdown.tsx";
 import { Button } from "../components/ui/button.tsx";
 import { ConfirmDialog } from "../components/ui/confirm-dialog.tsx";
@@ -282,6 +283,7 @@ export function ThreadView() {
         <header className="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-border px-6">
           <h2 className="truncate text-sm font-semibold">{thread?.title ?? t("thread.fallbackTitle")}</h2>
           <div className="flex items-center gap-1">
+            <InstructionsChip threadId={threadId} />
             <button
               type="button"
               onClick={() => setConfirmDelete(true)}

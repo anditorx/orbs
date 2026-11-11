@@ -9,6 +9,7 @@ import { appendEvent } from "../events.ts";
 import { t } from "../i18n.ts";
 import { loadFile, removeProject, saveFile } from "../workspaceStorage.ts";
 import { inOrg } from "./base.ts";
+import { removeOrphanedCustomizations } from "./customizations.ts";
 import { dropPins, pinnedIds } from "./pins.ts";
 
 const MB = 1024 * 1024;
@@ -256,6 +257,7 @@ export const projectsRouter = {
       });
     }
     await db.delete(schema.project).where(eq(schema.project.id, row.id)); // project_file rows cascade
+    await removeOrphanedCustomizations(context.orgId);
     await dropPins(context.orgId, "project", row.id);
     await removeProject(context.orgId, row.id);
     await audit({
