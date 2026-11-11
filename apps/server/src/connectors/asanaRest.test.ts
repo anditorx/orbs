@@ -44,6 +44,7 @@ describe("Asana REST tools", () => {
     expect(ASANA_REST_TOOLS.map((t) => t.name)).toEqual([
       "get_me",
       "get_my_tasks",
+      "count_completed_tasks",
       "list_projects",
       "get_task",
       "search_tasks",
@@ -264,6 +265,127 @@ describe("Asana REST tools", () => {
         { token: "T", fetchImpl: f, allowedWorkspaces: null },
       );
       expect(JSON.parse(out.content[0]?.text ?? "[]")).toHaveLength(2);
+    });
+  });
+
+  describe("finished tasks", () => {
+    /** A workspace's tasks, served two to a page; the offset says where the next page starts. */
+    const tasksByPage = (all: Array<Record<string, unknown>>) => (url: URL) => {
+      const start = Number(url.searchParams.get("offset") ?? 0);
+      const slice = all.slice(start, start + 2);
+      return {
+        body: {
+          data: slice,
+          ...(start + 2 < all.length ? { next_page: { offset: String(start + 2) } } : {}),
+        },
+      };
+    };
+    const serve = (tasks: Array<Record<string, unknown>>) =>
+      fake((path, url) => (path === "/users/me" ? twoWorkspaces(path, url) : tasksByPage(tasks)(url)));
+    const done = (gid: string, at: string) => ({ gid, completed: true, completed_at: at });
+    const mix = [
+      done("1", "2026-03-10T10:00:00Z"),
+      done("2", "2025-12-30T10:00:00Z"),
+      { gid: "3", completed: false },
+      done("4", "2026-03-20T10:00:00Z"),
+      done("5", "2026-07-01T10:00:00Z"),
+    ];
+
+    it("counts the finished tasks of a period over every page, per month and in total", async () => {
+      const { f, seen } = serve(mix);
+      const out = await callAsanaRest(
+        "count_completed_tasks",
+        { since: "2026-01-01", workspace: "Home" },
+        ctx(f),
+      );
+      expect(out.isError).toBe(false);
+      const data = JSON.parse(out.content[0]?.text ?? "{}");
+      expect(data.total_completed).toBe(3); // not the one from 2025, not the unfinished one
+      expect(data.workspaces[0]).toMatchObject({
+        workspace: "Home",
+        completed: 3,
+        by_month: { "2026-03": 2, "2026-07": 1 },
+      });
+      const asked = seen.filter((s) => s.url.pathname.endsWith("/tasks"));
+      expect(asked).toHaveLength(3); // three pages of two
+      expect(asked[1]?.url.searchParams.get("offset")).toBe("2");
+      expect(asked[0]?.url.searchParams.get("completed_since")).toBe("2026-01-01T00:00:00.000Z");
+      expect(asked.every((s) => s.method === "GET")).toBe(true);
+    });
+
+    it("stops at the end date, and adds up across workspaces", async () => {
+      const { f } = serve(mix);
+      const until = JSON.parse(
+        (
+          await callAsanaRest(
+            "count_completed_tasks",
+            { since: "2026-01-01", until: "2026-04-01", workspace: "Home" },
+            ctx(f),
+          )
+        ).content[0]?.text ?? "{}",
+      );
+      expect(until.total_completed).toBe(2);
+      const all = JSON.parse(
+        (await callAsanaRest("count_completed_tasks", { since: "2026-01-01" }, ctx(f))).content[0]?.text ??
+          "{}",
+      );
+      expect(all.workspaces.map((w: { workspace: string }) => w.workspace)).toEqual(["Home", "Acme Corp"]);
+      expect(all.total_completed).toBe(6); // 3 in each of the two workspaces
+    });
+
+    it("refuses dates that aren't dates, before asking Asana anything", async () => {
+      for (const args of [
+        {},
+        { since: "last year" },
+        { since: "2026-13-45" },
+        { since: "2026-01-01", until: "soon" },
+        { since: "2026-06-01", until: "2026-01-01" },
+      ]) {
+        const { f, seen } = serve(mix);
+        const out = await callAsanaRest("count_completed_tasks", args, ctx(f));
+        expect(out.isError, JSON.stringify(args)).toBe(true);
+        expect(seen).toHaveLength(0);
+      }
+    });
+
+    it("says the number is a floor when there were too many pages to read", async () => {
+      const { f, seen } = fake((path, url) =>
+        path === "/users/me"
+          ? twoWorkspaces(path, url)
+          : { body: { data: [done("1", "2026-03-10T10:00:00Z")], next_page: { offset: "more" } } },
+      );
+      const out = await callAsanaRest(
+        "count_completed_tasks",
+        { since: "2026-01-01", workspace: "Home" },
+        ctx(f),
+      );
+      const data = JSON.parse(out.content[0]?.text ?? "{}");
+      expect(data.note).toContain("higher");
+      expect(data.workspaces[0].at_least).toBe(true);
+      expect(seen.filter((s) => s.url.pathname.endsWith("/tasks"))).toHaveLength(30);
+    });
+
+    it("lets get_my_tasks include finished tasks, only the finished ones, or only unfinished (the default)", async () => {
+      const page = (tasks: Array<Record<string, unknown>>) =>
+        fake((path, url) => (path === "/users/me" ? twoWorkspaces(path, url) : { body: { data: tasks } }));
+      const ask = async (args: Record<string, unknown>) => {
+        const { f, seen } = page(mix);
+        const out = await callAsanaRest("get_my_tasks", { workspace: "Home", ...args }, ctx(f));
+        const groups = JSON.parse(out.content[0]?.text ?? "[]") as Array<{ data: Array<{ gid: string }> }>;
+        return {
+          ids: groups[0]?.data.map((t) => t.gid),
+          since: seen.find((s) => s.url.pathname.endsWith("/tasks"))?.url.searchParams.get("completed_since"),
+        };
+      };
+      expect((await ask({})).since).toBe("now");
+      const completed = await ask({ status: "completed", since: "2026-01-01" });
+      expect(completed.ids).toEqual(["1", "4", "5"]);
+      expect(completed.since).toBe("2026-01-01T00:00:00.000Z");
+      expect((await ask({ status: "all", since: "2026-01-01" })).ids).toEqual(["1", "2", "3", "4", "5"]);
+      const { f } = page(mix);
+      expect(
+        (await callAsanaRest("get_my_tasks", { status: "all", since: "yesterday-ish" }, ctx(f))).isError,
+      ).toBe(true);
     });
   });
 });
