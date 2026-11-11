@@ -148,6 +148,20 @@
       "when": 1793967362504,
       "tag": "0020_artifacts",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1794378464654,
+      "tag": "0021_customization_targets",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1794378470339,
+      "tag": "0022_customization_drop_project_id",
+      "breakpoints": true
     }
   ]
 }

@@ -104,6 +104,9 @@ const usageRoute = createRoute({ getParentRoute: () => appRoute, path: "/usage",
 const customizeRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/customize/$section",
+  validateSearch: (search: Record<string, unknown>): { project?: string } => ({
+    project: typeof search.project === "string" ? search.project : undefined,
+  }),
   beforeLoad: ({ params }) => {
     if (!CUSTOMIZE_SECTIONS.some((s) => s.id === params.section)) {
       throw redirect({ to: "/customize/$section", params: { section: "skills" } });

@@ -1,14 +1,18 @@
 import {
+  type AppliesTo,
+  appliesHere,
   type Customization,
   type CustomizationInput,
   type CustomizationKind,
+  instructionUsage,
   isOrgAdmin,
 } from "@orbs/protocol";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, useParams } from "@tanstack/react-router";
+import { Link, useParams, useSearch } from "@tanstack/react-router";
 import {
   Blocks,
   BookText,
+  Eye,
   Globe,
   type LucideIcon,
   Pencil,
@@ -19,6 +23,7 @@ import {
   Users,
 } from "lucide-react";
 import { type FormEvent, useState } from "react";
+import { InstructionsReader } from "../components/InstructionsReader.tsx";
 import { Button } from "../components/ui/button.tsx";
 import { ConfirmDialog } from "../components/ui/confirm-dialog.tsx";
 import { Input } from "../components/ui/input.tsx";
@@ -78,11 +83,19 @@ function CustomizationEditor({
   kind,
   initial,
   isAdmin,
+  siblings,
+  meId,
+  defaultProjectId,
   onClose,
 }: {
   kind: CustomizationKind;
   initial: Customization | null;
   isAdmin: boolean;
+  /** The other items of this kind the person can see, to work out how much room an instruction has left. */
+  siblings: Customization[];
+  meId: string;
+  /** A new item starts out limited to this project (when the person came from one). */
+  defaultProjectId?: string;
   onClose: () => void;
 }) {
   const t = useT();
@@ -91,9 +104,28 @@ function CustomizationEditor({
   const [name, setName] = useState(initial?.name ?? "");
   const [description, setDescription] = useState(initial?.description ?? "");
   const [body, setBody] = useState(initial?.body ?? templateFor(kind));
-  const [scope, setScope] = useState<"user" | "org">(initial?.scope ?? "user");
-  const [projectId, setProjectId] = useState(initial?.projectId ?? "");
+  const [chosenScope, setScope] = useState<"user" | "org">(initial?.scope ?? "user");
+  const [appliesTo, setAppliesTo] = useState<AppliesTo>(
+    initial?.appliesTo ?? (defaultProjectId ? "projects" : "all"),
+  );
+  const [projectIds, setProjectIds] = useState<string[]>(
+    initial?.projects.map((p) => p.id) ?? (defaultProjectId ? [defaultProjectId] : []),
+  );
   const [enabled, setEnabled] = useState(initial?.enabled ?? true);
+  // Sharing with the workspace is for admins, and for whoever created every project it is limited to.
+  // Who the person is and which projects exist decide what they may share; until both are known, change nothing.
+  const projectsReady = projects !== undefined && meId !== "";
+  const canShare =
+    isAdmin ||
+    (projectsReady &&
+      appliesTo === "projects" &&
+      projectIds.length > 0 &&
+      projectIds.every((id) => projects?.find((p) => p.id === id)?.editable));
+  // While the projects are still loading nothing is changed: a shared item must not turn personal by a slow load.
+  const scope = chosenScope === "org" && !canShare && projectsReady ? "user" : chosenScope;
+  const noProjectChosen = appliesTo === "projects" && projectIds.length === 0;
+  const toggleProject = (id: string) =>
+    setProjectIds((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]));
   const onSuccess = async () => {
     await queryClient.invalidateQueries({ queryKey: orpc.customizations.key() });
     onClose();
@@ -101,12 +133,31 @@ function CustomizationEditor({
   const create = useMutation(orpc.customizations.create.mutationOptions({ onSuccess }));
   const update = useMutation(orpc.customizations.update.mutationOptions({ onSuccess }));
   const error = create.error ?? update.error;
+  // An instruction has a fixed room in the prompt; say how much of it this one takes, before the server has to refuse.
+  const usage =
+    kind === "instruction"
+      ? instructionUsage(
+          siblings.map((s) => ({ ...s, projectIds: s.projects.map((p) => p.id) })),
+          {
+            id: initial?.id,
+            scope,
+            appliesTo,
+            projectIds: appliesTo === "projects" ? projectIds : [],
+            ownerId: initial?.ownerId ?? meId,
+            enabled,
+            name,
+            body,
+          },
+        )
+      : null;
+  const overLimit = usage ? usage.used > usage.limit : false;
 
   function submit(e: FormEvent) {
     e.preventDefault();
     const fields: Omit<CustomizationInput, "kind"> = {
       scope,
-      projectId: projectId || null,
+      appliesTo,
+      projectIds: appliesTo === "projects" ? projectIds : [],
       name,
       description,
       body,
@@ -142,20 +193,26 @@ function CustomizationEditor({
         aria-label={kind === "plugin" ? t("customize.bodyPlugin") : t("customize.bodyText")}
         className="w-full rounded-lg border border-border bg-card p-3 font-mono text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
       />
+      {usage && (
+        <p className={cn("text-xs", overLimit ? "text-destructive" : "text-muted-foreground")}>
+          {t(overLimit ? "customize.roomOver" : "customize.room", {
+            used: usage.used,
+            limit: usage.limit,
+            tier: t(`customize.tier.${usage.tier}`),
+          })}
+        </p>
+      )}
       <div className="grid gap-3 sm:grid-cols-3">
         <label className="space-y-1 text-xs text-muted-foreground">
           {t("customize.appliesIn")}
           <select
-            value={projectId}
-            onChange={(e) => setProjectId(e.target.value)}
+            value={appliesTo}
+            onChange={(e) => setAppliesTo(e.target.value as AppliesTo)}
             className="h-10 w-full rounded-lg border border-border bg-card px-3 text-sm text-foreground"
           >
-            <option value="">{t("customize.global")}</option>
-            {(projects ?? []).map((p) => (
-              <option key={p.id} value={p.id}>
-                {t("customize.onlyProject", { name: p.name })}
-              </option>
-            ))}
+            <option value="all">{t("customize.appliesAll")}</option>
+            <option value="all_projects">{t("customize.appliesAllProjects")}</option>
+            <option value="projects">{t("customize.appliesProjectsPick")}</option>
           </select>
         </label>
         <label className="space-y-1 text-xs text-muted-foreground">
@@ -163,11 +220,15 @@ function CustomizationEditor({
           <select
             value={scope}
             onChange={(e) => setScope(e.target.value as "user" | "org")}
-            disabled={!isAdmin && scope === "user"}
+            disabled={!canShare}
             className="h-10 w-full rounded-lg border border-border bg-card px-3 text-sm text-foreground"
           >
             <option value="user">{t("customize.ownerPersonal")}</option>
-            {isAdmin && <option value="org">{t("customize.ownerOrg")}</option>}
+            {canShare && (
+              <option value="org">
+                {appliesTo === "projects" ? t("customize.ownerProjects") : t("customize.ownerOrg")}
+              </option>
+            )}
           </select>
         </label>
         <label className="flex items-end gap-2 pb-2 text-sm">
@@ -175,12 +236,36 @@ function CustomizationEditor({
           {t("customize.enabled")}
         </label>
       </div>
+      {appliesTo === "projects" && (
+        <fieldset className="space-y-1.5 rounded-lg border border-border p-3">
+          <legend className="px-1 text-xs text-muted-foreground">{t("customize.pickProjects")}</legend>
+          {(projects ?? []).length === 0 && (
+            <p className="text-sm text-muted-foreground">{t("customize.noProjects")}</p>
+          )}
+          <div className="max-h-40 space-y-1 overflow-y-auto">
+            {(projects ?? []).map((p) => (
+              <label key={p.id} className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={projectIds.includes(p.id)}
+                  onChange={() => toggleProject(p.id)}
+                />
+                {p.name}
+              </label>
+            ))}
+          </div>
+          {noProjectChosen && <p className="text-xs text-destructive">{t("customize.pickOne")}</p>}
+        </fieldset>
+      )}
       {error && <p className="text-sm text-destructive">{error.message}</p>}
       <div className="flex justify-end gap-2">
         <Button variant="secondary" onClick={onClose}>
           {t("common.cancel")}
         </Button>
-        <Button type="submit" disabled={create.isPending || update.isPending}>
+        <Button
+          type="submit"
+          disabled={create.isPending || update.isPending || overLimit || noProjectChosen || !projectsReady}
+        >
           {t("common.save")}
         </Button>
       </div>
@@ -198,6 +283,19 @@ function CustomizationManager({ sectionId, summary }: { sectionId: string; summa
     ...orpc.customizations.list.queryOptions({ input: { kind: cfg?.kind } }),
     enabled: Boolean(cfg),
   });
+  const { project: requestedProject } = useSearch({ from: "/app/customize/$section" });
+  const { data: projects = [] } = useQuery(orpc.projects.list.queryOptions({ input: {} }));
+  // A link may name a project that is gone (or never was): then there is nothing to filter by.
+  const filterName = requestedProject ? projects.find((p) => p.id === requestedProject)?.name : undefined;
+  const projectFilter = filterName === undefined ? undefined : requestedProject;
+  // Coming from a project, show only the instructions that apply there.
+  const shown =
+    projectFilter && cfg?.kind === "instruction"
+      ? items?.filter((i) =>
+          appliesHere({ appliesTo: i.appliesTo, projectIds: i.projects.map((p) => p.id) }, projectFilter),
+        )
+      : items;
+  const [reading, setReading] = useState(false);
   const [editing, setEditing] = useState<Customization | "new" | null>(null);
   const [deleting, setDeleting] = useState<Customization | null>(null);
   const remove = useMutation(
@@ -218,26 +316,57 @@ function CustomizationManager({ sectionId, summary }: { sectionId: string; summa
     <div className="mt-6 space-y-3">
       <div className="flex items-center justify-between gap-3">
         <p className="text-sm text-muted-foreground">{summary}</p>
-        <Button onClick={() => setEditing("new")} className="shrink-0">
-          <Plus className="size-4" /> {t("customize.new")}
-        </Button>
+        <div className="flex shrink-0 items-center gap-2">
+          {cfg.kind === "instruction" && (
+            <Button variant="secondary" onClick={() => setReading(true)}>
+              <Eye className="size-4" /> {t("reader.open")}
+            </Button>
+          )}
+          <Button onClick={() => setEditing("new")}>
+            <Plus className="size-4" /> {t("customize.new")}
+          </Button>
+        </div>
       </div>
+      {cfg.kind === "instruction" && projectFilter && (
+        <p className="flex flex-wrap items-center gap-2 rounded-lg bg-muted px-3 py-2 text-sm">
+          {filterName ? t("customize.filterProject", { name: filterName }) : null}
+          <Link
+            to="/customize/$section"
+            params={{ section: "instructions" }}
+            search={{}}
+            className="text-primary hover:underline"
+          >
+            {t("customize.filterClear")}
+          </Link>
+        </p>
+      )}
+      {cfg.kind === "instruction" && (
+        <InstructionsReader
+          key={projectFilter ?? "none"}
+          open={reading}
+          onClose={() => setReading(false)}
+          initialProjectId={projectFilter ?? null}
+        />
+      )}
       {editing && (
         <CustomizationEditor
           key={editing === "new" ? "new" : editing.id}
           kind={cfg.kind}
           initial={editing === "new" ? null : editing}
           isAdmin={isAdmin}
+          siblings={items ?? []}
+          meId={me?.user.id ?? ""}
+          defaultProjectId={projectFilter}
           onClose={() => setEditing(null)}
         />
       )}
-      {items?.length === 0 && !editing && (
+      {shown?.length === 0 && !editing && (
         <p className="rounded-2xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
           {t("customize.empty", { noun: t(NOUN_KEY[cfg.kind]) })}
         </p>
       )}
       <ul className="space-y-2">
-        {items?.map((item) => (
+        {shown?.map((item) => (
           <li
             key={item.id}
             className="flex items-start gap-3 rounded-xl border border-border bg-card px-4 py-3"
@@ -251,9 +380,11 @@ function CustomizationManager({ sectionId, summary }: { sectionId: string; summa
                 </span>
                 <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
                   <Globe className="size-3" />{" "}
-                  {item.projectName
-                    ? t("customize.projectBadge", { name: item.projectName })
-                    : t("customize.globalShort")}
+                  {item.appliesTo === "projects"
+                    ? t("customize.projectsBadge", { names: item.projects.map((p) => p.name).join(", ") })
+                    : item.appliesTo === "all_projects"
+                      ? t("customize.appliesAllProjects")
+                      : t("customize.appliesAll")}
                 </span>
                 {!item.enabled && (
                   <span className="text-xs text-muted-foreground">{t("customize.disabled")}</span>
@@ -346,9 +477,11 @@ export function CustomizePage() {
           ) : (
             <>
               <CustomizationManager sectionId={current.id} summary={t(`customize.${current.id}.summary`)} />
-              <p className="mt-6 rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground">
-                {t("customize.agentNote")}
-              </p>
+              {current.id !== "instructions" && (
+                <p className="mt-6 rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground">
+                  {t("customize.agentNote")}
+                </p>
+              )}
             </>
           )}
         </div>

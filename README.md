@@ -56,6 +56,7 @@ on infrastructure they control.
 | **Accounts & workspaces** | Email/password sign-in, multiple workspaces (organizations) per user, workspace switcher, member roles (`org.admin`, `org.member`)                    |
 | **Invitations**           | Shareable invitation links that work without an email server; configurable sign-up policy (`open`, `invite-only`, `domain`)                           |
 | **Conversations**         | Create, rename and delete conversations; group them into projects; real-time updates across browser tabs and users                                    |
+| **Instructions**          | Standing guidance for the assistant, set for the workspace, for chosen projects or for yourself, with a clear order of authority                      |
 | **Code mode**             | Upload a project folder (drag-and-drop or picker), browse the file tree and view files; dependency folders and secret files are skipped automatically |
 | **System administration** | Console for system administrators: users (create, promote, block), organizations, and an audit log; command-line recovery tools                       |
 | **Interface**             | Collapsible sidebar, command palette (`⌘K` / `Ctrl+K`), info panel, light/dark/system themes with accent colors, keyboard shortcuts                   |
@@ -292,6 +293,35 @@ account has more than one, the Asana row shows a checklist of the workspaces the
 are searched, listed by `get_me`, or reachable by a task's id. Before anything is chosen all are on, and pasting a new
 token starts over. A sign-in (MCP) connection belongs to the single workspace picked when it was authorized, because
 Asana's MCP tokens are workspace-scoped, so it has nothing to choose.
+
+### Instructions
+
+Instructions are standing guidance the assistant reads before every reply: tone, company context, house style, what to
+avoid. They live under **Customize → Instructions** and can be written by an admin for everyone, for the projects of
+your choice, or by any member for themselves.
+
+**Where an instruction applies.** Every instruction says where it takes effect: in all conversations (including those
+outside a project), in every conversation that is inside a project, or only in the projects you tick (one or several).
+A project's own menu in the sidebar opens the instructions that apply there.
+
+**Who may share.** Admins can share with the whole workspace, with every project, or with chosen projects. Any member can
+write instructions for themselves. The creator of a project can also share instructions with everyone in the projects
+they created, and change them; nobody else can touch a project's rules.
+
+**Who wins.** Each instruction has an authority by who wrote it: the workspace's, then the project's, then the person's
+own. When two conflict, the prompt tells the model to follow the higher one, and the person's own instructions can add
+preferences but never cancel a rule above them. Each level is sent in its own tagged block, and text that imitates one of
+those tags (with spaces, look-alike brackets or invisible characters) is neutralised, so an instruction can't pass itself
+off as the workspace's. Instructions are guidance for the model, not a security boundary: a rule that must hold needs to
+be enforced in code (tools, connections, budgets), not in text.
+
+**Room.** Each level has its own room in the prompt: 3,000 characters for the workspace, 2,500 for a project and 2,500
+for the person's own, counted for the busiest place a conversation can happen. A save that would not fit is refused with
+the numbers, so nothing is silently cut off, and a level can't push another out.
+
+**See what the assistant reads.** A conversation shows how many instructions apply to it; opening it lists them by
+level and author, flags any that is cut off, and can show the exact text sent to the model. **Customize → Instructions**
+offers the same view for any project, before a conversation exists.
 
 ### Connections (MCP)
 

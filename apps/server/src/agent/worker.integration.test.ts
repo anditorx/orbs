@@ -35,10 +35,10 @@ describe.skipIf(!enabled)("the agent worker", () => {
 
   const auto = { kind: "auto" as const };
 
-  async function newThread(userId = alice, title = "t") {
+  async function newThread(userId = alice, title = "t", projectId: string | null = null) {
     const [row] = await dbm.db
       .insert(schema.thread)
-      .values({ orgId: org, title, createdBy: userId })
+      .values({ orgId: org, title, createdBy: userId, projectId })
       .returning({ id: schema.thread.id });
     const id = (row as { id: string }).id;
     threads.push(id);
@@ -247,6 +247,86 @@ describe.skipIf(!enabled)("the agent worker", () => {
     expect(system).not.toContain("DISABLED-RULE-XYZ");
     const roles = ((call?.body.contents ?? []) as { role: string }[]).map((c) => c.role);
     expect(roles).toEqual(["user", "model", "user"]);
+  });
+
+  it("puts each saved instruction in the block of whoever wrote it, however it is scoped", async () => {
+    const [p1, p2] = await dbm.db
+      .insert(schema.project)
+      .values([
+        { orgId: org, name: "Acme", createdBy: alice },
+        { orgId: org, name: "Globex", createdBy: alice },
+      ])
+      .returning({ id: schema.project.id });
+    const [acme, globex] = [(p1 as { id: string }).id, (p2 as { id: string }).id];
+    const rows = await dbm.db
+      .insert(schema.customization)
+      .values([
+        {
+          orgId: org,
+          ownerId: alice,
+          kind: "instruction",
+          scope: "org",
+          appliesTo: "projects",
+          name: "Team",
+          body: "TEAM-RULE-XYZ",
+        },
+        {
+          orgId: org,
+          ownerId: alice,
+          kind: "instruction",
+          scope: "user",
+          appliesTo: "projects",
+          name: "Note",
+          body: "PRIVATE-NOTE-XYZ",
+        },
+        {
+          orgId: org,
+          ownerId: alice,
+          kind: "instruction",
+          scope: "org",
+          appliesTo: "all_projects",
+          name: "Any",
+          body: "ANY-PROJECT-XYZ",
+        },
+      ])
+      .returning({ id: schema.customization.id, name: schema.customization.name });
+    const idOf = (name: string) => (rows.find((r) => r.name === name) as { id: string }).id;
+    await dbm.db.insert(schema.customizationProject).values([
+      { customizationId: idOf("Team"), projectId: acme },
+      { customizationId: idOf("Team"), projectId: globex },
+      { customizationId: idOf("Note"), projectId: acme },
+    ]);
+    const systemOf = async (projectId: string | null, question: string) => {
+      await ask(await newThread(alice, "t", projectId), question);
+      const instruction = callsFor(question).at(-1)?.body.systemInstruction as
+        | { parts: { text: string }[] }
+        | undefined;
+      return (instruction?.parts ?? []).map((p) => p.text).join("");
+    };
+    const block = (system: string, source: string) =>
+      new RegExp(`<orbs-instructions source="${source}">([\\s\\S]*?)</orbs-instructions>`).exec(
+        system,
+      )?.[1] ?? "";
+
+    const inAcme = await systemOf(acme, "rules in acme");
+    expect(block(inAcme, "project")).toContain("TEAM-RULE-XYZ");
+    expect(block(inAcme, "project")).not.toContain("PRIVATE-NOTE-XYZ");
+    expect(block(inAcme, "person")).toContain("PRIVATE-NOTE-XYZ");
+    expect(block(inAcme, "person")).not.toContain("TEAM-RULE-XYZ");
+    expect(block(inAcme, "organization")).toContain("ORG-RULE-XYZ");
+    expect(block(inAcme, "organization")).toContain("ANY-PROJECT-XYZ");
+
+    // A rule for several projects reaches each of them; a personal note kept for one doesn't reach the other.
+    const inGlobex = await systemOf(globex, "rules in globex");
+    expect(inGlobex).toContain("TEAM-RULE-XYZ");
+    expect(inGlobex).toContain("ANY-PROJECT-XYZ");
+    expect(inGlobex).not.toContain("PRIVATE-NOTE-XYZ");
+
+    // Outside any project: the ones for projects stay out, the workspace-wide one stays in.
+    const outside = await systemOf(null, "rules outside");
+    expect(outside).toContain("ORG-RULE-XYZ");
+    for (const gone of ["TEAM-RULE-XYZ", "PRIVATE-NOTE-XYZ", "ANY-PROJECT-XYZ"])
+      expect(outside).not.toContain(gone);
   });
 
   it("retries a passing failure before any text, and says so only if it keeps failing", async () => {

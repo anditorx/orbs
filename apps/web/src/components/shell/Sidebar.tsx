@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
   BarChart3,
+  BookText,
   ChevronDown,
   ChevronRight,
   FolderClosed,
@@ -167,6 +168,7 @@ function ProjectGroup({
 } & RowActions) {
   const t = useT();
   const pin = usePin();
+  const navigate = useNavigate();
   const [open, setOpen] = useState(true);
   const [menu, setMenu] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -234,6 +236,20 @@ function ProjectGroup({
       </div>
       {menu && (
         <div className="absolute top-8 right-1 z-30 w-44 rounded-xl border border-border bg-card p-1 shadow-lg">
+          <button
+            type="button"
+            onClick={() => {
+              setMenu(false);
+              navigate({
+                to: "/customize/$section",
+                params: { section: "instructions" },
+                search: { project: project.id },
+              });
+            }}
+            className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-muted"
+          >
+            <BookText className="size-3.5" /> {t("sidebar.projectInstructions")}
+          </button>
           <button
             type="button"
             onClick={() => {

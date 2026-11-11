@@ -1,6 +1,7 @@
 export * from "./artifact.ts";
 export * from "./contract.ts";
 export * from "./curl.ts";
+export * from "./instructions.ts";
 export * from "./providerChat.ts";
 export * from "./referencePrices.ts";
 export * from "./roles.ts";
