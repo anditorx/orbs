@@ -424,6 +424,23 @@ describe.skipIf(!enabled)("connectors (mock Asana)", () => {
       expect(calls.every((c) => c.startsWith("GET "))).toBe(true);
     });
 
+    it("counts the finished tasks of a period across every page and workspace", async () => {
+      const conn = await svc.getConnection(orgId, userC, "asana");
+      if (!conn) throw new Error("not connected");
+      const out = await svc.runTool(conn, "count_completed_tasks", { since: "2026-01-01" });
+      expect(out.isError).toBe(false);
+      const data = JSON.parse(out.text) as {
+        total_completed: number;
+        workspaces: Array<{ workspace: string; completed: number }>;
+      };
+      // One finished in 2026 in the first workspace (its second page held the unfinished one), two in the second.
+      expect(data.workspaces.map((w) => [w.workspace, w.completed])).toEqual([
+        ["Mock Workspace", 1],
+        ["Second Org", 2],
+      ]);
+      expect(data.total_completed).toBe(3);
+    });
+
     it("lists its own read-only tools for a token connection, and blocks anything else", async () => {
       const conn = await svc.getConnection(orgId, userC, "asana");
       if (!conn) throw new Error("not connected");

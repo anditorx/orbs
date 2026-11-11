@@ -266,6 +266,26 @@ answer with what it has. Results are handed over as data with a note to ignore a
 round's tokens are billed, and an app whose connection expired is left out with a note asking to reconnect. Not offered
 yet: your own MCP servers, actions that write, and models without tool calling (Gemma).
 
+**Dashboards, reports and pages with previews.** Ask for one ("make a dashboard of my open Asana tasks per project",
+"make a one-page profile of our company") and the assistant gathers the data with its tools, then saves one
+self-contained HTML page. It opens in the **Preview** tab beside the chat, with a version menu (asking for a change
+saves a new version and keeps the old), a wider view, and a download button. The downloaded file wraps the page in the
+same locked frame, so opening it later in a browser is as contained as the preview. Charts use Chart.js, which ships inside Orbs and is handed to the page as `Chart`.
+A page is written by a model that may have read text an attacker controls, so it is treated as hostile: it runs in a
+frame that can only run scripts (no same-origin access, no popups, no forms), under a policy that closes every network
+route, and the app itself only lets a frame show its own inline document, so a page can't send what it shows away by
+changing its address. This was tested with a page that tries fourteen ways to reach a local server: none got through,
+while the same page in an unprotected frame got through six. The policy is placed at the very start of every
+document, before anything the page contains, so a page can't hide it (for example inside a comment) or run a script
+before it applies. Pages belong to the conversation's owner, are limited to 400,000
+characters, 20 per conversation and 50 versions each, and go when the conversation is deleted. Not included yet: pages
+that refresh their own data, sharing with other members, and running real code in a server-side sandbox.
+
+**Finished tasks.** `get_my_tasks` shows unfinished tasks by default and can include finished ones (`status`
+`completed` or `all`, with a start date). Counting is a separate tool, `count_completed_tasks`: it reads every page
+(up to 3,000 tasks per workspace, then says the number is a floor) and answers with a total per workspace and per month,
+so "how many tasks did I finish this year" gets a real number instead of the first page.
+
 **Which workspaces.** An Asana account can have several workspaces. A token connection covers all of them: asking for
 "my tasks" looks in each and labels every answer with its workspace, and naming one ("in Acme") narrows it. When the
 account has more than one, the Asana row shows a checklist of the workspaces the assistant may use; only the ticked ones
@@ -420,8 +440,12 @@ pnpm --filter @orbs/server admin:demote  admin@example.com
 | `pnpm db:generate`                            | Generate a migration from schema changes.                                                                                                                                                                                      |
 | `pnpm db:migrate`                             | Apply pending migrations.                                                                                                                                                                                                      |
 
-Continuous integration runs linting, type checks, tests, migrations against a fresh database and a
-production build of the web app on pushes to `main` and on every pull request.
+Continuous integration runs linting, type checks, migrations against a fresh database, the unit and integration
+tests (with throwaway secrets generated per run) and a production build of the web app on pushes to `main` and on
+every pull request.
+
+Integration tests run when `DATABASE_URL` and `ORBS_SECRET_KEY` are set. Point them at a **separate database** while
+`pnpm dev` is running: the dev server's agent worker shares the database and would pick up the turns the tests create.
 
 ## Repository layout
 
@@ -446,6 +470,14 @@ Security is a core requirement, not an afterthought. Current safeguards include:
   returned by the API, and sign-in uses PKCE, a single-use `state` and issuer checking.
 - Uploaded paths are normalized and confined to the project directory; secret files such as
   `.env` and private keys are never accepted.
+- The repository is public, so nothing secret may be committed: real `.env` files, keys and certificates are
+  git-ignored, and `pnpm check:secrets` scans every tracked file. A pre-commit hook runs the same scan on what is
+  staged (enable it once with `git config core.hooksPath .githooks`). A line that is deliberately fake carries
+  `secret-scan:allow`. If a real key is ever committed, treat it as leaked: revoke it first, then clean the history.
+- The server refuses to start in production while `BETTER_AUTH_SECRET` is still the placeholder from `.env.example`
+  (and warns about it in development).
+- Provider API keys, OAuth client secrets and tokens are never sent back to the browser (only the last four
+  characters of a stored key or secret), and error messages never contain them.
 
 If you discover a vulnerability, please **do not open a public issue**. Report it privately via
 [GitHub Security Advisories](https://github.com/anditorx/orbs/security/advisories/new).

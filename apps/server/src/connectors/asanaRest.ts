@@ -41,8 +41,44 @@ export const ASANA_REST_TOOLS: RestToolDef[] = [
   {
     name: "get_my_tasks",
     description:
-      "Tasks assigned to you that are not finished, from every workspace unless one is named. Each group says which workspace it is from.",
-    inputSchema: { type: "object", properties: { workspace: workspaceProp, limit: limitProp } },
+      "Tasks assigned to you, from every workspace unless one is named; each group says which workspace it is from. " +
+      'By default only unfinished ones. Set status to "completed" or "all" (with since) to include finished tasks. ' +
+      "To COUNT finished tasks use count_completed_tasks instead: this returns one page only.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        workspace: workspaceProp,
+        limit: limitProp,
+        status: {
+          type: "string",
+          enum: ["open", "completed", "all"],
+          description: "open (default): unfinished. completed: finished since the date. all: both.",
+        },
+        since: {
+          type: "string",
+          description:
+            "For completed or all: only tasks finished on or after this date (YYYY-MM-DD). Defaults to 90 days ago.",
+        },
+      },
+    },
+  },
+  {
+    name: "count_completed_tasks",
+    description:
+      "How many tasks assigned to you were completed in a period, counted over all of them (not one page), in every workspace unless one is named. " +
+      'Use it for questions like "how many tasks did I finish this year". Dates are in UTC.',
+    inputSchema: {
+      type: "object",
+      properties: {
+        since: { type: "string", description: "Count tasks completed on or after this date (YYYY-MM-DD)." },
+        until: {
+          type: "string",
+          description: "Count tasks completed before this date (YYYY-MM-DD). Leave empty for up to now.",
+        },
+        workspace: workspaceProp,
+      },
+      required: ["since"],
+    },
   },
   {
     name: "list_projects",
@@ -123,7 +159,7 @@ async function get(
   ctx: RestContext,
   path: string,
   params: Record<string, string>,
-): Promise<{ data: unknown } | { error: string }> {
+): Promise<{ data: unknown; next?: string } | { error: string }> {
   const url = new URL(`${ctx.base ?? ASANA_API}${path}`);
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
   let res: Response;
@@ -140,8 +176,9 @@ async function get(
   if (res.status === 401) throw new AsanaUnauthorized();
   if (!res.ok) return { error: await asanaMessage(res) };
   try {
-    const body = (await res.json()) as { data?: unknown };
-    return { data: body.data ?? null };
+    const body = (await res.json()) as { data?: unknown; next_page?: { offset?: unknown } | null };
+    const next = body.next_page?.offset;
+    return { data: body.data ?? null, ...(typeof next === "string" && next ? { next } : {}) };
   } catch {
     return { error: "Asana sent something unreadable." };
   }
@@ -227,7 +264,58 @@ async function inWorkspaces(
   return ok(groups);
 }
 
-const TASK_FIELDS = "name,due_on,completed,permalink_url,projects.name,assignee.name";
+const TASK_FIELDS = "name,due_on,completed,completed_at,permalink_url,projects.name,assignee.name";
+
+/** A date the model gave, as an ISO moment, or null when it isn't a real date in a sensible range. */
+function dateOf(value: unknown): string | null {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}(?:T[\d:.]+Z?)?$/.test(value.trim())) return null;
+  const at = new Date(value.trim().length === 10 ? `${value.trim()}T00:00:00Z` : value.trim());
+  const year = at.getUTCFullYear();
+  return Number.isNaN(at.getTime()) || year < 2000 || year > 2100 ? null : at.toISOString();
+}
+
+/** Pages read when counting: 100 tasks each, so up to 3,000 tasks per workspace before it says the count is a floor. */
+const MAX_COUNT_PAGES = 30;
+
+/** Counts the tasks the account finished in a period in one workspace, reading every page. */
+async function countCompleted(
+  ctx: RestContext,
+  w: Workspace,
+  since: string,
+  until: string | null,
+): Promise<{ completed: number; by_month: Record<string, number>; at_least?: true } | { error: string }> {
+  const from = Date.parse(since);
+  const to = until ? Date.parse(until) : Number.POSITIVE_INFINITY;
+  const byMonth: Record<string, number> = {};
+  let completed = 0;
+  let offset: string | undefined;
+  let pages = 0;
+  do {
+    const page = await get(ctx, "/tasks", {
+      assignee: "me",
+      workspace: w.gid,
+      // Asana returns unfinished tasks and those finished since this moment; the finished ones are filtered below.
+      completed_since: since,
+      limit: "100",
+      opt_fields: "completed,completed_at",
+      ...(offset ? { offset } : {}),
+    });
+    if ("error" in page) return page;
+    for (const t of (Array.isArray(page.data) ? page.data : []) as Array<{
+      completed?: boolean;
+      completed_at?: string;
+    }>) {
+      const at = t.completed === true && t.completed_at ? Date.parse(t.completed_at) : Number.NaN;
+      if (Number.isNaN(at) || at < from || at >= to) continue;
+      completed++;
+      const month = (t.completed_at as string).slice(0, 7);
+      byMonth[month] = (byMonth[month] ?? 0) + 1;
+    }
+    offset = page.next;
+    pages++;
+  } while (offset && pages < MAX_COUNT_PAGES);
+  return { completed, by_month: byMonth, ...(offset ? { at_least: true as const } : {}) };
+}
 
 /** Runs one tool. Never throws except `AsanaUnauthorized`; every other problem comes back as an error result. */
 export async function callAsanaRest(
@@ -245,16 +333,70 @@ export async function callAsanaRest(
       const data = (me.data ?? {}) as { workspaces?: Array<{ gid?: string }> };
       return ok({ ...data, workspaces: (data.workspaces ?? []).filter((w) => w.gid && allowed.has(w.gid)) });
     }
-    case "get_my_tasks":
-      return inWorkspaces(ctx, args.workspace, (w) =>
-        get(ctx, "/tasks", {
+    case "get_my_tasks": {
+      const status = args.status === "completed" || args.status === "all" ? args.status : "open";
+      const since =
+        status === "open"
+          ? null
+          : (dateOf(args.since) ?? new Date(Date.now() - 90 * 86_400_000).toISOString());
+      if (status !== "open" && args.since !== undefined && args.since !== "" && !dateOf(args.since)) {
+        return fail("since must be a date such as 2026-01-01.");
+      }
+      return inWorkspaces(ctx, args.workspace, async (w) => {
+        const r = await get(ctx, "/tasks", {
           assignee: "me",
           workspace: w.gid,
-          completed_since: "now",
+          completed_since: since ?? "now",
           limit: String(limitOf(args.limit)),
           opt_fields: TASK_FIELDS,
-        }),
-      );
+        });
+        if ("error" in r || status !== "completed" || !Array.isArray(r.data)) return r;
+        // Asana also returns unfinished tasks for this filter; "completed" means only the finished ones.
+        const from = Date.parse(since as string);
+        return {
+          data: (r.data as Array<{ completed?: boolean; completed_at?: string }>).filter(
+            (t) => t.completed === true && Date.parse(t.completed_at ?? "") >= from,
+          ),
+        };
+      });
+    }
+    case "count_completed_tasks": {
+      const since = dateOf(args.since);
+      if (!since) return fail("since is required and must be a date such as 2026-01-01.");
+      const until = args.until === undefined || args.until === "" ? null : dateOf(args.until);
+      if (args.until !== undefined && args.until !== "" && !until)
+        return fail("until must be a date such as 2026-12-31.");
+      if (until && Date.parse(until) <= Date.parse(since)) return fail("until must be after since.");
+      const chosen = await workspacesFor(ctx, args.workspace);
+      if ("error" in chosen) return fail(chosen.error);
+      const groups: Array<Record<string, unknown>> = [];
+      let total = 0;
+      let anyFloor = false;
+      let anyFailed = false;
+      for (const w of chosen) {
+        const r = await countCompleted(ctx, w, since, until);
+        if ("error" in r) {
+          anyFailed = true;
+          groups.push({ workspace: w.name, workspace_gid: w.gid, error: r.error });
+        } else {
+          total += r.completed;
+          anyFloor ||= Boolean(r.at_least);
+          groups.push({ workspace: w.name, workspace_gid: w.gid, ...r });
+        }
+      }
+      if (groups.every((g) => g.error !== undefined))
+        return fail(String(groups[0]?.error ?? "Asana refused."));
+      return ok({
+        since,
+        until,
+        total_completed: total,
+        ...(anyFloor
+          ? { note: "Counting stopped early in at least one workspace, so the real number is higher." }
+          : {}),
+        ...(anyFailed ? { warning: "Some workspaces could not be counted; see their errors." } : {}),
+        workspaces: groups,
+      });
+    }
     case "list_projects":
       return inWorkspaces(ctx, args.workspace, (w) =>
         get(ctx, "/projects", {

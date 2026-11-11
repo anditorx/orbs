@@ -46,7 +46,7 @@ describe("parseGeminiCurl", () => {
 import { parseProviderPrompt } from "./curl.ts";
 
 describe("parseProviderPrompt", () => {
-  const KEY = "AIzaSyA1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q";
+  const KEY = "AIzaSyA1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q"; // secret-scan:allow (made up)
   it("reads labelled lines", () => {
     expect(
       parseProviderPrompt(

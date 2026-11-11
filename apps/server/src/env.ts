@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { checkSecrets } from "./secretsGuard.ts";
 
 const EnvSchema = z.object({
   DATABASE_URL: z.string().url(),
@@ -42,6 +43,8 @@ const EnvSchema = z.object({
 });
 
 export const env = EnvSchema.parse(process.env);
+
+for (const warning of checkSecrets(env, process.env.NODE_ENV)) console.warn(`[security] ${warning}`);
 
 if (env.ORBS_SIGNUP_MODE === "domain" && !env.ORBS_SIGNUP_DOMAINS?.trim()) {
   throw new Error("ORBS_SIGNUP_MODE=domain requires ORBS_SIGNUP_DOMAINS (e.g. company.co.id)");

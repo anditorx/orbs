@@ -5,6 +5,7 @@
  */
 import { schema } from "@orbs/db";
 import { and, eq } from "drizzle-orm";
+import { ArtifactError, getArtifact, saveArtifact } from "../artifacts.ts";
 import { PROVIDERS } from "../connectors/providers.ts";
 import { ConnectorError, listTools, runTool, type ToolInfo } from "../connectors/service.ts";
 import { db } from "../db.ts";
@@ -28,6 +29,8 @@ export interface ToolRun {
 
 export interface Toolset {
   declarations: ToolDeclaration[];
+  /** The person's connected apps contribute tools (beyond the built-in dashboard ones). */
+  hasApps: boolean;
   /** Which app and action a request is for, in words the person reads. */
   describe(name: string): { app: string; tool: string };
   run(call: ToolCall): Promise<ToolRun>;
@@ -35,6 +38,7 @@ export interface Toolset {
 
 export const EMPTY_TOOLSET: Toolset = {
   declarations: [],
+  hasApps: false,
   describe: (name) => ({ app: "", tool: name }),
   run: async (call) => ({
     app: "",
@@ -81,7 +85,7 @@ function failure(error: unknown): string {
  * Builds the tools for one reply from the person's working connections. Listing an app's tools can fail (it may be
  * down); that app is simply left out, because a chat must still work without it.
  */
-export async function loadToolset(orgId: string, userId: string): Promise<Toolset> {
+export async function loadToolset(orgId: string, userId: string, page?: PageContext): Promise<Toolset> {
   const conns = await db
     .select()
     .from(schema.connection)
@@ -119,15 +123,21 @@ export async function loadToolset(orgId: string, userId: string): Promise<Toolse
       });
     }
   }
+  const hasApps = declarations.length > 0;
+  const pageTools = new Set(page ? PAGE_TOOLS.map((t) => t.name) : []);
+  if (page) declarations.push(...PAGE_TOOLS);
   if (declarations.length === 0) return EMPTY_TOOLSET;
 
   return {
     declarations,
+    hasApps,
     describe: (name) => {
+      if (pageTools.has(name)) return { app: BUILT_IN_APP, tool: name };
       const t = byName.get(name);
       return { app: t?.app ?? "", tool: t?.tool ?? name };
     },
     async run(call) {
+      if (page && pageTools.has(call.name)) return runPageTool(call, page);
       const target = byName.get(call.name);
       if (!target) {
         return { app: "", tool: call.name, ok: false, response: { error: "That tool is not available." } };
@@ -150,4 +160,104 @@ export async function loadToolset(orgId: string, userId: string): Promise<Toolse
       }
     },
   };
+}
+
+/** What the tools that make pages need to know about the reply they run in. */
+export interface PageContext {
+  orgId: string;
+  userId: string;
+  threadId: string;
+  turnId: string;
+}
+
+const BUILT_IN_APP = "Orbs";
+
+const PAGE_RULES =
+  "The page runs in a locked frame: no network, no external files, fonts or images (a tiny data: URI is fine), no forms. " +
+  "Put the data it shows inside the page, as JSON in a script. The global `Chart` (Chart.js 4) is available for charts. " +
+  "Make it responsive and readable in both light and dark colour schemes, and write its labels in the person's language.";
+
+/** The tools every reply has for making pages. */
+export const PAGE_TOOLS: ToolDeclaration[] = [
+  {
+    name: "create_dashboard",
+    description:
+      "Save a dashboard, report or informational web page as ONE complete, self-contained HTML document the person sees in the Preview tab beside the chat. " +
+      `Call it once, after gathering the data. ${PAGE_RULES}`,
+    parameters: {
+      type: "object",
+      properties: {
+        title: { type: "string", description: "A short title, shown above the preview." },
+        html: { type: "string", description: "The complete HTML document." },
+      },
+      required: ["title", "html"],
+    },
+  },
+  {
+    name: "update_dashboard",
+    description:
+      "Replace a dashboard made earlier in this conversation with a new version (the old one is kept). " +
+      `Use the artifact_id from the list of dashboards in your instructions or from create_dashboard. Send the complete page again. ${PAGE_RULES}`,
+    parameters: {
+      type: "object",
+      properties: {
+        artifact_id: { type: "string", description: "The dashboard to change." },
+        html: { type: "string", description: "The complete new HTML document." },
+        title: { type: "string", description: "A new title; leave out to keep the old one." },
+      },
+      required: ["artifact_id", "html"],
+    },
+  },
+  {
+    name: "get_dashboard",
+    description:
+      "Read the current HTML of a dashboard made earlier in this conversation, so you can change it. Then call update_dashboard.",
+    parameters: {
+      type: "object",
+      properties: { artifact_id: { type: "string", description: "The dashboard to read." } },
+      required: ["artifact_id"],
+    },
+  },
+];
+
+const str = (v: unknown) => (typeof v === "string" ? v : "");
+
+/** Runs one of the page tools. A refusal comes back as text for the model to act on, never as a crash. */
+export async function runPageTool(call: ToolCall, ctx: PageContext): Promise<ToolRun> {
+  const done = (ok: boolean, response: Record<string, unknown>): ToolRun => ({
+    app: BUILT_IN_APP,
+    tool: call.name,
+    ok,
+    response,
+  });
+  try {
+    if (call.name === "get_dashboard") {
+      const page = await getArtifact(
+        ctx.orgId,
+        ctx.userId,
+        str(call.args.artifact_id),
+        undefined,
+        ctx.threadId,
+      );
+      if (!page)
+        return done(false, { error: "There is no dashboard with that artifact_id in this conversation." });
+      return done(true, { title: page.title, version: page.version, html: page.html });
+    }
+    const saved = await saveArtifact({
+      orgId: ctx.orgId,
+      userId: ctx.userId,
+      threadId: ctx.threadId,
+      turnId: ctx.turnId,
+      ...(call.name === "update_dashboard" ? { artifactId: str(call.args.artifact_id) } : {}),
+      ...(call.args.title === undefined ? {} : { title: str(call.args.title) }),
+      html: str(call.args.html),
+    });
+    return done(true, {
+      result: `Saved "${saved.title}" as version ${saved.version} (artifact_id: ${saved.artifactId}). It is shown in the Preview tab beside the chat; tell the person briefly what it shows.`,
+    });
+  } catch (error) {
+    if (error instanceof ArtifactError) return done(false, { error: error.message });
+    console.error("[agent tools] saving a page failed", error instanceof Error ? error.message : error);
+    return done(false, { error: "The page could not be saved." });
+  }
 }

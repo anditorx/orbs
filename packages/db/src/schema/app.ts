@@ -504,3 +504,41 @@ export const turn = pgTable(
     index("turn_status_idx").on(t.status, t.createdAt),
   ],
 );
+
+/**
+ * A page the assistant made for a conversation (for example a dashboard), kept as numbered versions so a change never
+ * loses the one before. It belongs to the person who owns the conversation and goes away with it.
+ */
+export const artifact = pgTable(
+  "artifact",
+  {
+    id: id(),
+    orgId: orgId(),
+    threadId: text("thread_id")
+      .notNull()
+      .references(() => thread.id, { onDelete: "cascade" }),
+    /** The conversation's owner, who alone may see it. */
+    ownerId: text("owner_id").notNull(),
+    title: text("title").notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("artifact_thread_idx").on(t.threadId, t.createdAt)],
+);
+
+export const artifactVersion = pgTable(
+  "artifact_version",
+  {
+    id: id(),
+    artifactId: text("artifact_id")
+      .notNull()
+      .references(() => artifact.id, { onDelete: "cascade" }),
+    version: integer("version").notNull(),
+    /** One self-contained HTML document. It is only ever shown inside a sandboxed frame. */
+    html: text("html").notNull(),
+    /** The reply that wrote it, when there was one. */
+    turnId: text("turn_id"),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("artifact_version_uq").on(t.artifactId, t.version)],
+);

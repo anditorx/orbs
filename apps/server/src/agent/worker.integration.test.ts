@@ -460,6 +460,8 @@ describe.skipIf(!enabled)("the agent worker", () => {
       ((call?.body.tools ?? []) as Array<{ functionDeclarations: Array<{ name: string }> }>).flatMap((t) =>
         t.functionDeclarations.map((d) => d.name),
       );
+    const appTools = (call: { body: Record<string, unknown> } | undefined) =>
+      toolNames(call).filter((n) => n.startsWith("asana__"));
     const systemOf = (call: { body: Record<string, unknown> } | undefined) =>
       JSON.stringify(call?.body.systemInstruction);
 
@@ -467,7 +469,9 @@ describe.skipIf(!enabled)("the agent worker", () => {
       const t = await newThread(bob);
       await ask(t, "any tools? first-check", auto, bob);
       const call = callsFor("first-check").at(-1);
-      expect(toolNames(call)).toEqual([]);
+      // No app is connected, so the only tools are the ones that make dashboards.
+      expect(appTools(call)).toEqual([]);
+      expect(toolNames(call)).toEqual(["create_dashboard", "update_dashboard", "get_dashboard"]);
       expect(systemOf(call)).toContain("has not connected any app");
     });
 
@@ -483,7 +487,7 @@ describe.skipIf(!enabled)("the agent worker", () => {
       expect(toolNames(first)).toContain("asana__get_my_tasks");
       expect(systemOf(first)).toContain("provided tools");
       // Only the app's read-only actions are ever offered.
-      expect(toolNames(first).every((n) => !/create|update|delete|add_/.test(n))).toBe(true);
+      expect(appTools(first).every((n) => !/create|update|delete|add_/.test(n))).toBe(true);
 
       const [reply] = await replyOf(t);
       expect(((reply?.payload ?? {}) as { text?: string }).text).toContain("Write report");
@@ -533,8 +537,71 @@ describe.skipIf(!enabled)("the agent worker", () => {
       // The connection is now marked, so the next reply offers no tools and says what to do.
       await ask(t, "and now? second-check");
       const call = callsFor("second-check").at(-1);
-      expect(toolNames(call)).toEqual([]);
+      expect(appTools(call)).toEqual([]);
       expect(systemOf(call)).toContain("Needs to be reconnected");
+    });
+  });
+
+  describe("making dashboards", () => {
+    const listFor = async (threadId: string) => {
+      const { listArtifacts } = await import("../artifacts.ts");
+      return listArtifacts(org, alice, threadId);
+    };
+
+    it("lets the model save a page, shows it as the reply's tool use, and keeps it for the conversation", async () => {
+      const t = await newThread();
+      const { turnId, turn } = await ask(t, "buat dashboard #dash");
+      expect(turn.status).toBe("completed");
+      const pages = await listFor(t);
+      expect(pages).toHaveLength(1);
+      expect(pages[0]).toMatchObject({ title: "Mock dashboard", version: 1 });
+
+      const [reply] = await replyOf(t);
+      expect(reply?.payload).toMatchObject({
+        turnId,
+        tools: [{ app: "Orbs", tool: "create_dashboard", ok: true }],
+      });
+      // The conversation is told, so every open tab can show the preview.
+      const saved = await eventsOf(t, "artifact.saved");
+      expect(saved).toHaveLength(1);
+      expect(saved[0]?.payload).toMatchObject({
+        artifactId: pages[0]?.id,
+        version: 1,
+        created: true,
+        turnId,
+      });
+
+      // The round had room for a whole page.
+      const body = callsFor("#dash")[0]?.body as { generationConfig: { maxOutputTokens: number } };
+      expect(body.generationConfig.maxOutputTokens).toBeGreaterThanOrEqual(16_384);
+    });
+
+    it("tells the model which dashboards exist, so it changes one instead of making another", async () => {
+      const t = await newThread();
+      await ask(t, "first #dash");
+      const [first] = await listFor(t);
+      await ask(t, "ubah jadi lebih rapi #dash2");
+      const second = callsFor("#dash2")[0];
+      const system = JSON.stringify(second?.body.systemInstruction);
+      expect(system).toContain(`artifact_id: ${first?.id}`);
+      expect(system).toContain("Dashboards already in this conversation");
+
+      const pages = await listFor(t);
+      expect(pages).toHaveLength(1); // changed, not duplicated
+      expect(pages[0]?.versions.map((v) => v.version)).toEqual([1, 2]);
+      expect(pages[0]?.title).toBe("Mock dashboard"); // the title was kept
+      const { getArtifact } = await import("../artifacts.ts");
+      expect((await getArtifact(org, alice, first?.id ?? "", 1))?.html).toContain("Mock dashboard");
+      expect((await getArtifact(org, alice, first?.id ?? ""))?.html).toContain("Second version");
+    });
+
+    it("stores a hostile page as plain text and leaves it to the sandbox, never reading it", async () => {
+      const t = await newThread();
+      await ask(t, "make it #dash #hostile");
+      const [page] = await listFor(t);
+      expect(page?.title).toBe("Hostile page");
+      const { getArtifact } = await import("../artifacts.ts");
+      expect((await getArtifact(org, alice, page?.id ?? ""))?.html).toContain("location.href");
     });
   });
 

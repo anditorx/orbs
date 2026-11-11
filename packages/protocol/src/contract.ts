@@ -8,6 +8,8 @@ import {
   AdminOrg,
   AdminOrgDetail,
   AdminUser,
+  ArtifactDetail,
+  ArtifactSummary,
   AuditEntry,
   BudgetInput,
   BudgetStatus,
@@ -82,6 +84,13 @@ export const contract = {
     delete: oc.input(z.object({ threadId: z.string() })).output(z.object({ deleted: z.literal(true) })),
   },
   /** The assistant's replies: whether one is being written, stopping it, and watching it arrive. */
+  /** Pages the assistant made (dashboards). Only the conversation's owner may read them. */
+  artifacts: {
+    list: oc.input(z.object({ threadId: z.string() })).output(z.array(ArtifactSummary)),
+    get: oc
+      .input(z.object({ artifactId: z.string(), version: z.number().int().min(1).optional() }))
+      .output(ArtifactDetail),
+  },
   turns: {
     /** The reply being queued or written for this conversation right now, if any. */
     active: oc.input(z.object({ threadId: z.string() })).output(TurnState.nullable()),

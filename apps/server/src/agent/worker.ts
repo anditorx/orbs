@@ -8,6 +8,7 @@
 import { schema } from "@orbs/db";
 import type { Engine, TurnErrorCode, TurnState } from "@orbs/protocol";
 import { and, asc, count, desc, eq, lt, sql } from "drizzle-orm";
+import { listArtifacts } from "../artifacts.ts";
 import { PROVIDERS } from "../connectors/providers.ts";
 import { aad, vault } from "../connectors/vault.ts";
 import { db } from "../db.ts";
@@ -69,10 +70,12 @@ const DEFAULTS = {
   staleMs: 30_000,
   heartbeatMs: 5_000,
   retryDelaysMs: [1_000, 3_000],
-  maxOutputTokens: 4_096,
+  // A dashboard is a whole page of code written in one go, so a round needs room (it costs only what is used).
+  maxOutputTokens: 16_384,
   historyTokens: 30_000,
-  idleTimeoutMs: 30_000,
-  overallTimeoutMs: 120_000,
+  // A tool request arrives whole once the model has written it, so a long page means a long silence first.
+  idleTimeoutMs: 90_000,
+  overallTimeoutMs: 300_000,
   flushMs: 200,
   cancelPollMs: 500,
   autoTitle: true,
@@ -198,7 +201,12 @@ async function prepare(
   let tools: Toolset = EMPTY_TOOLSET;
   if (!/^gemma/i.test(picked.modelId)) {
     try {
-      tools = await loadToolset(turn.orgId, turn.userId);
+      tools = await loadToolset(turn.orgId, turn.userId, {
+        orgId: turn.orgId,
+        userId: turn.userId,
+        threadId: turn.threadId,
+        turnId: turn.id,
+      });
     } catch (error) {
       console.error(
         "agent turn: loading tools failed",
@@ -207,6 +215,11 @@ async function prepare(
       );
     }
   }
+
+  // Dashboards this conversation already has, so the model can change one instead of starting another.
+  const existing = tools.declarations.some((d) => d.name === "create_dashboard")
+    ? await listArtifacts(turn.orgId, turn.userId, turn.threadId)
+    : [];
 
   const events = await db
     .select({ type: schema.event.type, payload: schema.event.payload })
@@ -234,7 +247,11 @@ async function prepare(
       now: new Date(),
       instructions,
       connections,
-      toolsOn: tools.declarations.length > 0,
+      toolsOn: tools.hasApps,
+      pages: {
+        enabled: tools.declarations.some((d) => d.name === "create_dashboard"),
+        existing: existing.map((a) => ({ id: a.id, title: a.title, version: a.version })),
+      },
     }),
     history,
     tools,

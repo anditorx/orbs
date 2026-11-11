@@ -33,7 +33,17 @@ export interface ConnectedApp {
  */
 const describeApp = (a: ConnectedApp) => (a.workspaces ? `${a.name} (workspaces: ${a.workspaces})` : a.name);
 
-export function describeAccess(apps: ConnectedApp[], toolsOn = false): string {
+export interface ExistingPage {
+  id: string;
+  title: string;
+  version: number;
+}
+
+export function describeAccess(
+  apps: ConnectedApp[],
+  toolsOn = false,
+  pages?: { enabled: boolean; existing: ExistingPage[] },
+): string {
   const base =
     "You can't open files or browse the web. You can't see which apps the person has connected unless it is stated below; " +
     "never claim they are or aren't connected to an app on your own.";
@@ -64,6 +74,24 @@ export function describeAccess(apps: ConnectedApp[], toolsOn = false): string {
       `Needs to be reconnected before it can be used: ${stale.map((a) => a.name).join(", ")}. Tell the person to reconnect it under Customize → Connections if it matters.`,
     );
   }
+  if (pages?.enabled) {
+    lines.push(
+      "You can make pages: dashboards, reports and simple informational web pages (for example a landing page, a company or product profile, " +
+        "or an explainer). When the person asks for one (or a page with charts and tables would serve them better than text), " +
+        "first gather the data with the tools above if it lives in a connected app, then call create_dashboard once with a complete HTML page. " +
+        "To change a dashboard, call get_dashboard to read it, then update_dashboard with the artifact_id; don't create a second one. " +
+        "Afterwards say briefly what it shows and that it is in the Preview tab. The page runs in a locked frame (no network, no external files); " +
+        "its data goes inside the page, and the global `Chart` (Chart.js 4) draws charts. A page is one document: for several sections use anchors " +
+        "and in-page navigation, and draw illustrations with inline SVG or CSS. Never put secrets, or personal data the person didn't ask to show, in a page.",
+    );
+    if (pages.existing.length > 0) {
+      lines.push(
+        `Dashboards already in this conversation: ${pages.existing
+          .map((p) => `"${p.title}" (artifact_id: ${p.id}, version ${p.version})`)
+          .join("; ")}.`,
+      );
+    }
+  }
   return lines.join("\n");
 }
 
@@ -73,6 +101,8 @@ export function buildSystemPrompt(opts: {
   connections?: ConnectedApp[];
   /** The person's connected apps are offered to the model as tools in this reply. */
   toolsOn?: boolean;
+  /** The model can make dashboards in this reply, and the ones this conversation already has. */
+  pages?: { enabled: boolean; existing: ExistingPage[] };
 }): string {
   const date = opts.now.toISOString().slice(0, 10);
   const parts = [
@@ -80,7 +110,7 @@ export function buildSystemPrompt(opts: {
     "If you don't know something or aren't sure, say so instead of guessing.",
     "Reply in the language the person writes in, unless they ask for another.",
     `Today's date is ${date}.`,
-    describeAccess(opts.connections ?? [], opts.toolsOn ?? false),
+    describeAccess(opts.connections ?? [], opts.toolsOn ?? false, opts.pages),
   ];
 
   let room = MAX_INSTRUCTION_CHARS;

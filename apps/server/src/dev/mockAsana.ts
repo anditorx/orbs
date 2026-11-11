@@ -253,10 +253,30 @@ export async function startMockAsana(opts: MockAsanaOptions): Promise<MockAsana>
             },
           });
         const inSecond = url.searchParams.get("workspace") === "501";
-        if (rest === "/tasks")
+        if (rest === "/tasks") {
+          const since = url.searchParams.get("completed_since");
+          if (since && since !== "now") {
+            // Finished tasks too: two pages in the first workspace, one in the second.
+            const all = inSecond
+              ? [
+                  { gid: "41", completed: true, completed_at: "2026-05-01T09:00:00Z" },
+                  { gid: "42", completed: true, completed_at: "2026-06-01T09:00:00Z" },
+                ]
+              : [
+                  { gid: "31", completed: true, completed_at: "2026-03-10T10:00:00Z" },
+                  { gid: "32", completed: true, completed_at: "2025-12-30T10:00:00Z" },
+                  { gid: "33", completed: false },
+                ];
+            const start = url.searchParams.get("offset") === "o2" ? 2 : 0;
+            return json(res, 200, {
+              data: all.slice(start, start + 2),
+              next_page: start + 2 < all.length ? { offset: "o2" } : null,
+            });
+          }
           return json(res, 200, {
             data: [inSecond ? { gid: "12", name: "Review budget" } : { gid: "11", name: "Write report" }],
           });
+        }
         if (rest === "/projects")
           return json(res, 200, {
             data: [inSecond ? { gid: "22", name: "Audit" } : { gid: "21", name: "Launch plan" }],
